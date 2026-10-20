@@ -38,7 +38,15 @@ export const BASE_POPULAR_MEMECOINS = [
   { symbol: "VIRTUAL", address: "0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b" },
   { symbol: "$mfer", address: "0xe3086852a4b125803c815a158249ae468a3254ca" },
   { symbol: "AERO", address: "0x940181a94a35a4569e4529a3cdfb74e38fd98631" },
-  { symbol: "SOL", address: "0x311935cd47aab3f384da9ec6a7d383de7feee327" }
+  { symbol: "SOL", address: "0x311935cd47aab3f384da9ec6a7d383de7feee327" },
+  { symbol: "MIGGLES", address: "0xb1a03eda10342529bbf8eb700a06c60441fef25d" },
+  { symbol: "BENJI", address: "0xbc45647ea894030a4e9801ec03d797496243e702" },
+  { symbol: "CHOMP", address: "0xe3339199d3001ad3ff85633a6fa189c450c95a28" },
+  { symbol: "MOCHI", address: "0xf6e932ca12afa26665dc4dde7e24be1177524b80" },
+  { symbol: "SKI", address: "0x7a56e1c57c7475ccf742a1832b028f0456652f97" },
+  { symbol: "WELL", address: "0xa88594d404727625a9437c3f886c761664d1a672" },
+  { symbol: "SEAM", address: "0x1c7a460413dd4e964f96d8dfc56e7223ce88cd85" },
+  { symbol: "LUM", address: "0x04e33b6dd631215109848a4365d9326f868ef616" }
 ];
 
 const BASE_ACTIVE_TOKENS = BASE_POPULAR_MEMECOINS.map(t => t.address);
@@ -198,7 +206,8 @@ export async function findArbitrageCandidates(
             const dexId = (p.dexId || "").toLowerCase();
             if (!SUPPORTED_FLASH_DEXES.has(dexId)) continue;
             const liq = p.liquidity?.usd || 0;
-            if (liq < minLiq || liq > DEFAULT_MAX_LIQ_MEMECOIN) continue;
+            const maxAllowed = smallPondMode ? actualMaxLiq : DEFAULT_MAX_LIQ_GENERAL;
+            if (liq < minLiq || liq > maxAllowed) continue;
             allPools.push(p);
           }
         }
@@ -210,7 +219,8 @@ export async function findArbitrageCandidates(
     // 2. Second: Discover additional trending & meme tokens via search
     const queries = [
       `${chain} meme`, `${chain} dog`, `${chain} cat`, `${chain} degen`,
-      `${chain} brett`, `${chain} virtuals`, `aerodrome ${chain}`
+      `${chain} brett`, `${chain} virtuals`, `aerodrome ${chain}`,
+      `${chain} swap`, `${chain} toshi`, `${chain} aero`, `${chain} volume`
     ];
     const discoveredAddrs = new Set();
 
@@ -238,7 +248,7 @@ export async function findArbitrageCandidates(
     }
 
     // Query discovered tokens in micro-batches of 4 to prevent DexScreener 30-pair truncation
-    const newAddrs = Array.from(discoveredAddrs).slice(0, 24);
+    const newAddrs = Array.from(discoveredAddrs).slice(0, 80);
     for (let i = 0; i < newAddrs.length; i += 4) {
       const chunk = newAddrs.slice(i, i + 4);
       try {
@@ -253,7 +263,8 @@ export async function findArbitrageCandidates(
             const dexId = (p.dexId || "").toLowerCase();
             if (!SUPPORTED_FLASH_DEXES.has(dexId)) continue;
             const liq = p.liquidity?.usd || 0;
-            if (liq < minLiq || liq > DEFAULT_MAX_LIQ_MEMECOIN) continue;
+            const maxAllowed = smallPondMode ? actualMaxLiq : DEFAULT_MAX_LIQ_GENERAL;
+            if (liq < minLiq || liq > maxAllowed) continue;
             allPools.push(p);
           }
         }
@@ -379,6 +390,9 @@ export async function findArbitrageCandidates(
 
 // Allow direct CLI execution
 if (process.argv[1]?.endsWith("auto_pair_finder.js")) {
-  const chainArg = process.argv[2] || "base";
-  findArbitrageCandidates(chainArg, DEFAULT_MIN_LIQ, DEFAULT_MAX_LIQ_SMALL_POND, true).catch(console.error);
+  const chainArg = process.argv[2] || process.env.CHAIN || "base";
+  const minLiqArg = process.argv[3] ? parseFloat(process.argv[3]) : 2000;
+  const maxLiqArg = process.argv[4] ? parseFloat(process.argv[4]) : 5000000;
+  const smallPondArg = process.argv[5] === "true";
+  findArbitrageCandidates(chainArg, minLiqArg, maxLiqArg, smallPondArg).catch(console.error);
 }

@@ -297,11 +297,45 @@ export async function scanCrossV2V3Opportunities(chain = "base", options = {}) {
   ];
 
   const results = [];
+  const provider = options.provider;
 
   for (const pair of benchmarkPairs) {
+    let currentV2Pool = pair.v2Pool;
+    let currentV3Pool = pair.v3Pool;
+    let v2Price = pair.v2Price;
+    let v3Price = pair.v3Price;
+    let tick = pair.tick;
+
+    if (provider) {
+      try {
+        const v2Contract = new ethers.Contract(pair.v2Pool.pairAddress, ["function getReserves() view returns (uint112, uint112, uint32)"], provider);
+        const v3Contract = new ethers.Contract(pair.v3Pool.pairAddress, ["function slot0() view returns (uint160, int24, uint16, uint16, uint16, uint8, bool)"], provider);
+        const [v2Res, v3Slot] = await Promise.all([v2Contract.getReserves(), v3Contract.slot0()]);
+        
+        currentV2Pool = {
+          pairAddress: pair.v2Pool.pairAddress,
+          reserve0: v2Res[0].toString(),
+          reserve1: v2Res[1].toString()
+        };
+        currentV3Pool = {
+          pairAddress: pair.v3Pool.pairAddress,
+          sqrtPriceX96: v3Slot[0].toString(),
+          liquidity: pair.v3Pool.liquidity
+        };
+        tick = Number(v3Slot[1]);
+        v3Price = V3QuoterEngine.sqrtPriceX96ToPrice(v3Slot[0]);
+        if (Number(v2Res[0]) > 0) {
+          v2Price = Number(v2Res[1]) / Number(v2Res[0]);
+        }
+      } catch (e) {
+        // Pool not responding or not on active network, skip
+        continue;
+      }
+    }
+
     const sizing = V3QuoterEngine.findOptimalCrossV2V3Borrow(
-      pair.v2Pool,
-      pair.v3Pool,
+      currentV2Pool,
+      currentV3Pool,
       {
         maxBorrowEther: "5.0",
         feeBpsV2: 30,
@@ -318,7 +352,7 @@ export async function scanCrossV2V3Opportunities(chain = "base", options = {}) {
 
       // Deduct L2 gas ($0.01) and validator tip (85%)
       const netProfitUsd = (grossProfitUsd * 0.15) - 0.01;
-      const spreadPercent = ((Math.abs(pair.v3Price - pair.v2Price) / pair.v2Price) * 100).toFixed(2) + "%";
+      const spreadPercent = ((Math.abs(v3Price - v2Price) / Math.min(v2Price, v3Price)) * 100).toFixed(2) + "%";
 
       if (netProfitUsd > 0.05) {
         results.push({
@@ -331,10 +365,10 @@ export async function scanCrossV2V3Opportunities(chain = "base", options = {}) {
           v3Dex: pair.v3Dex,
           feeTierPercent: (pair.feeTier / 10000).toFixed(2) + "%",
           feeTier: pair.feeTier,
-          tick: pair.tick,
-          sqrtPriceX96: pair.v3Pool.sqrtPriceX96,
-          v2Price: pair.v2Price,
-          v3Price: pair.v3Price,
+          tick: tick,
+          sqrtPriceX96: currentV3Pool.sqrtPriceX96,
+          v2Price: v2Price,
+          v3Price: v3Price,
           spreadPercent,
           optimalBorrow: ethers.formatEther(sizing.optimalBorrow).substring(0, 7),
           optimalBorrowUnit: pair.baseSymbol,
@@ -345,8 +379,8 @@ export async function scanCrossV2V3Opportunities(chain = "base", options = {}) {
           poolV3Target: pair.v3Pool.pairAddress,
           preflightPassed: true
         });
-      }
     }
+  }
   }
 
   return results.sort((a, b) => parseFloat(b.netProfitUsd) - parseFloat(a.netProfitUsd));

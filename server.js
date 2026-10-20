@@ -232,11 +232,11 @@ function writeEnvFile(newValues) {
 
 async function runAutopilotDiscoveryCycle() {
   const chain = process.env.CHAIN || "base";
-  const smallPond = process.env.SMALL_POND_MODE !== "false";
-  const minLiq = 5000;
+  const smallPond = process.env.SMALL_POND_MODE === "true";
+  const minLiq = 2000;
   const maxLiq = smallPond ? 80000 : 5000000;
 
-  logEvent("DISCOVERY", "info", `Autopilot starting multi-DEX market scan on ${chain.toUpperCase()} ${smallPond ? "[Solution 4: Small Pond Mode $2k-$80k]" : ""}...`);
+  logEvent("DISCOVERY", "info", `Autopilot starting multi-DEX market scan on ${chain.toUpperCase()} ${smallPond ? "[Solution 4: Small Pond Mode $2k-$80k]" : "[All Pools $2k-$5M]"}...`);
   autopilotState.currentStatus = `Discovering Pairs on ${chain.toUpperCase()}`;
   broadcast({ type: "autopilot_state", data: autopilotState });
 
@@ -401,7 +401,7 @@ async function runAutopilotV3Cycle() {
   const chain = process.env.CHAIN || "base";
 
   try {
-    const opps = await scanCrossV2V3Opportunities(chain);
+    const opps = await scanCrossV2V3Opportunities(chain, { provider: getProvider(chain) });
     if (opps.length > 0) {
       const topOpp = opps[0];
       logEvent("CONCENTRATED", "success", `🎯 [Solution 5: Concentrated Liquidity] Spread detected: ${topOpp.symbol} (Fee: ${topOpp.feeTierPercent}) | Spread: ${topOpp.spreadPercent} | Tick: ${topOpp.tick} | Projected Net: +$${topOpp.netProfitUsd} USD`);
@@ -541,7 +541,36 @@ async function runAutopilotMonitoringCycle() {
   autopilotState.currentStatus = `Evaluating ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex})`;
   broadcast({ type: "autopilot_state", data: autopilotState });
 
-  const spread = parseFloat(currentPair.spreadPercent?.replace("%", "") || "0");
+  let spread = parseFloat(currentPair.spreadPercent?.replace("%", "") || "0");
+  let priceA = parseFloat(currentPair.poolA.priceUsd);
+  let priceB = parseFloat(currentPair.poolB.priceUsd);
+  let liqA = parseFloat(currentPair.poolA.liquidityUsd);
+  let liqB = parseFloat(currentPair.poolB.liquidityUsd);
+
+  // Live on-chain reserve check (updates stale spreads immediately)
+  if (currentPair.poolA?.pairAddress && currentPair.poolB?.pairAddress) {
+    try {
+      const provider = getProvider(chain);
+      const pairContractA = new ethers.Contract(currentPair.poolA.pairAddress, ["function getReserves() view returns (uint112, uint112, uint32)", "function token0() view returns (address)"], provider);
+      const pairContractB = new ethers.Contract(currentPair.poolB.pairAddress, ["function getReserves() view returns (uint112, uint112, uint32)", "function token0() view returns (address)"], provider);
+      const [resA, resB] = await Promise.all([pairContractA.getReserves(), pairContractB.getReserves()]);
+      const [t0A, t0B] = await Promise.all([pairContractA.token0(), pairContractB.token0()]);
+      const isToken0A = (t0A.toLowerCase() === currentPair.tokenAddress.toLowerCase());
+      const isToken0B = (t0B.toLowerCase() === currentPair.tokenAddress.toLowerCase());
+      const rBaseA = isToken0A ? Number(resA[0]) : Number(resA[1]);
+      const rQuoteA = isToken0A ? Number(resA[1]) : Number(resA[0]);
+      const rBaseB = isToken0B ? Number(resB[0]) : Number(resB[1]);
+      const rQuoteB = isToken0B ? Number(resB[1]) : Number(resB[0]);
+
+      if (rBaseA > 0 && rBaseB > 0 && rQuoteA > 0 && rQuoteB > 0) {
+        const livePriceA = rQuoteA / rBaseA;
+        const livePriceB = rQuoteB / rBaseB;
+        const liveSpread = (Math.abs(livePriceA - livePriceB) / Math.min(livePriceA, livePriceB)) * 100;
+        spread = liveSpread;
+        currentPair.spreadPercent = `${liveSpread.toFixed(2)}%`;
+      }
+    } catch {}
+  }
 
   // Broadcast to Live Discrepancy Feed whenever pair spread is detected
   if (spread >= 0.05) {
@@ -556,12 +585,6 @@ async function runAutopilotMonitoringCycle() {
   // Check if this pool has a noticeable spread
   if (spread >= 0.2) {
     autopilotState.opportunitiesDetected++;
-
-    // Calculate optimal trade size using math optimizer
-    const priceA = parseFloat(currentPair.poolA.priceUsd);
-    const priceB = parseFloat(currentPair.poolB.priceUsd);
-    const liqA = parseFloat(currentPair.poolA.liquidityUsd);
-    const liqB = parseFloat(currentPair.poolB.liquidityUsd);
 
     const r0_A = BigInt(Math.floor((liqA / 2 / (priceA || 1)) * 1e18));
     const r1_A = BigInt(Math.floor((liqA / 2) * 1e18));
