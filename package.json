@@ -1,0 +1,21 @@
+{
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.6.1",
+    "dotenv": "^18.0.8",
+    "ethers": "^6.17.0",
+    "express": "^5.3.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^4.2.0",
+    "hardhat": "^3.19.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test:sim": "npx hardhat run scripts/run_test_suite.js",
+    "find:pairs": "node scripts/auto_pair_finder.js",
+    "scanner": "node scripts/auto_scanner.js"
+  },
+  "type": "module"
+}

@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="High-Performance DEX-to-DEX Flash Swap Arbitrage & MEV Protection Console. Autonomous pair discovery, anti-honeypot auditor, and mathematical trade size optimizer.">
+  <title>FlashArb Pro | DEX Arbitrage & Flash Loan Command Center</title>
+  
+  <!-- Modern Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="url(#flashGrad)" stroke="none"></polygon>
+            <defs>
+              <linearGradient id="flashGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#10B981" />
+                <stop offset="100%" stop-color="#06B6D4" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">FlashArb <span class="badge-pro">PRO</span></span>
+          <span class="brand-subtitle">Autonomous Arbitrage Engine</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" id="nav-dashboard" data-tab="tab-dashboard">
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">Command Center</span>
+        </button>
+        <button class="nav-item" id="nav-discovery" data-tab="tab-discovery">
+          <span class="nav-icon">🔍</span>
+          <span class="nav-label">Pair Discovery</span>
+          <span class="nav-badge" id="sidebar-pair-count">0</span>
+        </button>
+        <button class="nav-item" id="nav-auditor" data-tab="tab-auditor">
+          <span class="nav-icon">🛡️</span>
+          <span class="nav-label">Honeypot Auditor</span>
+        </button>
+        <button class="nav-item" id="nav-calculator" data-tab="tab-calculator">
+          <span class="nav-icon">⚡</span>
+          <span class="nav-label">Profit Optimizer</span>
+        </button>
+        <button class="nav-item" id="nav-settings" data-tab="tab-settings">
+          <span class="nav-icon">⚙️</span>
+          <span class="nav-label">Config & Keys</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-status-card">
+        <div class="status-row">
+          <span class="status-indicator" id="rpc-indicator"></span>
+          <span class="status-text" id="network-name">BASE_SEPOLIA</span>
+        </div>
+        <div class="status-meta">
+          <span id="block-number">Block: --</span>
+          <span id="latency-val">-- ms</span>
+        </div>
+        <div class="sidebar-contract-row" id="sidebar-contract-box" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);">
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">
+            <span>Contract</span>
+            <span id="sidebar-contract-badge" style="font-size: 9px; color: #10b981; background: rgba(16,185,129,0.15); padding: 1px 4px; border-radius: 3px; font-weight: 600;">Verified</span>
+          </div>
+          <a href="#" id="sidebar-contract-link" target="_blank" style="display: block; margin-top: 3px; font-family: monospace; font-size: 11px; color: #34d399; text-decoration: none; word-break: break-all;">
+            <span id="sidebar-contract-text">0x4F94...2E60 ↗</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <span class="version-tag">Engine v2.4.0 (L2 Optimized)</span>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Global Bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 class="page-title" id="page-title">Command Center & Live Scanner</h1>
+          <p class="page-desc" id="page-desc">Real-time DEX arbitrage monitoring with zero-capital flash loans</p>
+        </div>
+
+        <div class="topbar-right">
+          <div class="stat-pill" title="Target Network">
+            <span class="pill-dot connected" style="background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></span>
+            <span class="pill-label">NETWORK:</span>
+            <span class="pill-value text-info" id="topbar-network-name" style="font-weight: 700; color: #60a5fa;">BASE_SEPOLIA</span>
+          </div>
+
+          <div class="stat-pill" title="Deployed Executor Smart Contract">
+            <span class="pill-dot connected" id="pill-contract-dot" style="background: #10b981; box-shadow: 0 0 8px #10b981;"></span>
+            <span class="pill-label">CONTRACT:</span>
+            <a href="#" id="topbar-contract-link" target="_blank" class="pill-value text-success" style="font-family: monospace; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+              <span id="topbar-contract-text">0x4F94...2E60</span>
+              <span id="topbar-contract-badge" style="font-size: 9px; background: rgba(16,185,129,0.2); color: #10b981; padding: 1px 5px; border-radius: 4px; border: 1px solid rgba(16,185,129,0.4);">Verified ↗</span>
+            </a>
+          </div>
+
+          <div class="stat-pill" title="Current WebSocket Connection">
+            <span class="pill-dot connected" id="ws-status-dot"></span>
+            <span class="pill-label" id="ws-status-text">WS Connected</span>
+          </div>
+
+          <div class="stat-pill" title="Execution Mode">
+            <span class="pill-label">MODE:</span>
+            <span class="pill-value highlight" id="mode-display">Live Arbitrage (Contract Active)</span>
+          </div>
+
+          <div class="stat-pill" title="Solution 2: Real-time on-chain Sync stream">
+            <span class="pill-dot connected" id="stream-dot"></span>
+            <span class="pill-label">STREAM:</span>
+            <span class="pill-value text-success" id="stream-display">WSS Sync (&lt; 25ms)</span>
+          </div>
+
+          <div class="stat-pill" title="Solution 4: Small Pond ($2k-$80k) & Intra-DEX Triangular">
+            <span class="pill-dot connected" style="background: #a855f7; box-shadow: 0 0 10px #a855f7;"></span>
+            <span class="pill-label">STRATEGY:</span>
+            <span class="pill-value text-accent" id="strategy-display">Small Pond + Triangular</span>
+          </div>
+
+          <div class="stat-pill" title="Solution 5: Concentrated Liquidity (Uniswap V3 & Slipstream CLAMM)">
+            <span class="pill-dot connected" style="background: #06b6d4; box-shadow: 0 0 10px #06b6d4;"></span>
+            <span class="pill-label">CLAMM:</span>
+            <span class="pill-value text-info" id="clamm-display">V3 + Slipstream</span>
+          </div>
+
+          <button class="btn btn-outline btn-sm" id="btn-quick-sim">
+            <span>▶ Run Local Sim</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- TAB 1: Command Center & Live Scanner -->
+      <section class="tab-pane active" id="tab-dashboard">
+        <!-- 1-CLICK AUTOPILOT COMMAND HERO -->
+        <div class="card autopilot-hero-card">
+          <div class="autopilot-hero-header">
+            <div class="hero-left">
+              <div class="hero-badge">
+                <span class="live-pulse"></span>
+                <span>100% HANDS-FREE AUTONOMOUS PIPELINE</span>
+              </div>
+              <h2 class="hero-title">1-Click Autonomous Arbitrage Autopilot</h2>
+              <p class="hero-desc">
+                Automatically scans DexScreener ➔ Audits contracts with GoPlus ➔ Computes optimal flash sizing ➔ Executes flash swaps ➔ Logs every trade. Leave it running for hours and check back later.
+              </p>
+            </div>
+            <div class="hero-right">
+              <button class="btn btn-autopilot" id="btn-autopilot-toggle">
+                <span class="btn-autopilot-icon" id="btn-autopilot-icon">🚀</span>
+                <span class="btn-autopilot-text" id="btn-autopilot-text">START 100% AUTOPILOT</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="autopilot-status-bar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="status-label">CURRENT PIPELINE PHASE:</span>
+              <span class="status-current" id="autopilot-phase-text">Idle — Ready to launch autonomous cycle</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px; font-size: 0.78rem;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="color: var(--text-muted);">Target Network:</span>
+                <span id="hero-network-badge" style="color: #60a5fa; font-weight: 700; background: rgba(59,130,246,0.15); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3);">BASE_SEPOLIA</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="color: var(--text-muted);">Contract Status:</span>
+                <a href="#" target="_blank" id="hero-contract-link" style="color: #34d399; font-weight: 600; font-family: monospace; text-decoration: none; background: rgba(16,185,129,0.15); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16,185,129,0.3); display: inline-flex; align-items: center; gap: 4px;">
+                  <span id="hero-contract-badge">0x4F94...2E60 (Verified &amp; Connected)</span>
+                  <span style="font-size: 10px;">↗</span>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Autopilot Cumulative Stats Grid -->
+          <div class="autopilot-stats-grid">
+            <div class="auto-stat-card highlight-profit-card">
+              <span class="auto-stat-label">Cumulative Net Profit</span>
+              <span class="auto-stat-val text-success font-mono" id="auto-profit-val">$0.00 USD</span>
+              <span class="auto-stat-sub">Realized after 85% tip & gas</span>
+            </div>
+
+            <div class="auto-stat-card">
+              <span class="auto-stat-label">Active Autopilot Runtime</span>
+              <span class="auto-stat-val font-mono text-accent" id="auto-runtime-val">00h 00m 00s</span>
+              <span class="auto-stat-sub">Persistent background timer</span>
+            </div>
+
+            <div class="auto-stat-card">
+              <span class="auto-stat-label">Arbitrage Trades Realized</span>
+              <span class="auto-stat-val font-mono" id="auto-trades-val">0</span>
+              <span class="auto-stat-sub">Executed flash swaps</span>
+            </div>
+
+            <div class="auto-stat-card">
+              <span class="auto-stat-label">Scams & Honeypots Blocked</span>
+              <span class="auto-stat-val font-mono text-danger" id="auto-scams-val">0 Blocked</span>
+              <span class="auto-stat-sub">Neutralized via GoPlus audit</span>
+            </div>
+
+            <div class="auto-stat-card">
+              <span class="auto-stat-label">Pools Audited & Safe</span>
+              <span class="auto-stat-val font-mono" id="auto-pools-val">0 Pools</span>
+              <span class="auto-stat-sub">Active multi-DEX pairs</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Autopilot Executed Trades History -->
+        <div class="card" id="autopilot-trades-card">
+          <div class="card-header flex-between">
+            <div>
+              <h2 class="card-title">Autopilot Realized Trades History</h2>
+              <span class="card-sub">Continuous ledger of all automated flash swap arbitrage executions</span>
+            </div>
+            <div class="trade-actions">
+              <a href="/api/autopilot/logs/download" class="btn btn-outline btn-sm" id="btn-download-logs" download>
+                <span>📥 Download Complete Log (.log)</span>
+              </a>
+              <button class="btn btn-ghost btn-sm" id="btn-reset-stats">Reset Profit Stats</button>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table" id="table-autopilot-trades">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Token & Pair</th>
+                  <th>Exchange Route</th>
+                  <th>Price Spread</th>
+                  <th>Borrow Size</th>
+                  <th>Net Profit ($USD)</th>
+                  <th>Transaction Receipt</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-autopilot-trades">
+                <tr>
+                  <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                    No trades executed yet. Click "START 100% AUTOPILOT" above to begin automated trading.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        <!-- Solution 4: Intra-DEX Triangular Arbitrage & Small Pond Card -->
+        <div class="card" id="triangular-arb-card" style="border: 1px solid rgba(168, 85, 247, 0.35); background: linear-gradient(180deg, rgba(168, 85, 247, 0.05) 0%, rgba(15, 23, 42, 0.6) 100%);">
+          <div class="card-header flex-between">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="badge-pro" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid #a855f7;">SOLUTION 4</span>
+                <h2 class="card-title" style="margin: 0;">Intra-DEX Triangular Arbitrage (Small Pond Sweet Spot)</h2>
+              </div>
+              <span class="card-sub">Atomic 3-hop swap cycles (<code style="color: #c084fc;">WETH ➔ Token A ➔ Token B ➔ WETH</code>) within the same DEX. Bypasses multi-DEX desync and avoids institutional HFT competition ($2k - $80k).</span>
+            </div>
+            <div class="card-actions">
+              <button class="btn btn-outline btn-sm" id="btn-scan-triangular" style="border-color: #a855f7; color: #c084fc;">
+                <span>⚡ Scan 3-Hop Triangular Loops</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table" id="table-triangular-routes">
+              <thead>
+                <tr>
+                  <th>Triangular Route (3-Hop)</th>
+                  <th>DEX Exchange</th>
+                  <th>Implied Spread</th>
+                  <th>Optimal Sizing</th>
+                  <th>Net Profit ($USD)</th>
+                  <th>Revert Guard</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-triangular-routes">
+                <tr>
+                  <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 22px;">
+                    Click "⚡ Scan 3-Hop Triangular Loops" or launch Autopilot to detect real-time cyclic cross-rate opportunities.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Solution 5: Concentrated Liquidity & Slipstream CLAMM Cross-Type Arbitrage Card -->
+        <div class="card" id="concentrated-arb-card" style="border: 1px solid rgba(6, 182, 212, 0.35); background: linear-gradient(180deg, rgba(6, 182, 212, 0.05) 0%, rgba(15, 23, 42, 0.6) 100%); margin-top: 16px;">
+          <div class="card-header flex-between">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="badge-pro" style="background: rgba(6, 182, 212, 0.2); color: #22d3ee; border: 1px solid #06b6d4;">SOLUTION 5</span>
+                <h2 class="card-title" style="margin: 0;">Concentrated Liquidity &amp; Slipstream Engine (CLAMM / V3 Arbitrage)</h2>
+              </div>
+              <span class="card-sub">Cross-market flash swaps (<code style="color: #22d3ee;">V2 Constant Product Flash Borrow ➔ V3 Concentrated Swap ➔ V2 Repay</code>). Exploits tick inefficiencies and high capital concentration across fee tiers (0.01%, 0.05%, 0.30%, 1.00%).</span>
+            </div>
+            <div class="card-actions">
+              <button class="btn btn-outline btn-sm" id="btn-scan-v3" style="border-color: #06b6d4; color: #22d3ee;">
+                <span>🎯 Scan V3 Concentrated Pools</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table" id="table-v3-routes">
+              <thead>
+                <tr>
+                  <th>Token Pair &amp; Tier</th>
+                  <th>Pool Architectures</th>
+                  <th>Tick &amp; sqrtPriceX96</th>
+                  <th>Price Spread</th>
+                  <th>Optimal Borrow</th>
+                  <th>Net Profit ($USD)</th>
+                  <th>Safety Guard</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-v3-routes">
+                <tr>
+                  <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 22px;">
+                    Click "🎯 Scan V3 Concentrated Pools" or run Autopilot to detect real-time V2-to-V3 concentrated liquidity spreads.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Action Control Bar -->
+        <div class="action-bar-card">
+          <div class="action-left">
+            <button class="btn btn-primary" id="btn-toggle-bot">
+              <span class="btn-icon">⚡</span>
+              <span id="btn-toggle-bot-text">Start Auto-Scanner</span>
+            </button>
+            <button class="btn btn-secondary" id="btn-run-simulation">
+              <span class="btn-icon">🧪</span>
+              <span id="btn-run-sim-text">Run Hardhat Simulation</span>
+            </button>
+            <button class="btn btn-outline" id="btn-discover-nav">
+              <span class="btn-icon">🔍</span>
+              <span>Find New Pairs</span>
+            </button>
+          </div>
+          <div class="action-right">
+            <label class="toggle-control">
+              <input type="checkbox" id="chk-autoscroll" checked>
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Auto-scroll Terminal</span>
+            </label>
+            <button class="btn btn-ghost btn-sm" id="btn-clear-logs">Clear Terminal</button>
+          </div>
+        </div>
+
+        <!-- Split Terminal & Opportunity Stream -->
+        <div class="dashboard-split">
+          <!-- Live Terminal Window -->
+          <div class="terminal-container">
+            <div class="terminal-header">
+              <div class="terminal-dots">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+              </div>
+              <div class="terminal-title">LIVE EXECUTION & SCANNER STREAM</div>
+              <div class="terminal-actions">
+                <span class="live-tag">● LIVE</span>
+              </div>
+            </div>
+            <div class="terminal-body" id="terminal-output">
+              <div class="log-entry info">
+                <span class="log-time">[SYSTEM]</span>
+                <span class="log-msg">Flash Arbitrage Engine Console Initialized. Ready for monitoring.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Opportunity Feed -->
+          <div class="opp-sidebar">
+            <div class="card-header">
+              <h2 class="card-title">Live Discrepancy Feed</h2>
+              <span class="card-badge" id="feed-badge">Real-Time</span>
+            </div>
+            <div class="opp-list" id="opp-feed-list">
+              <div class="empty-state">
+                <div class="empty-icon">📡</div>
+                <div class="empty-title">Awaiting Live Signals</div>
+                <div class="empty-desc">Click "Start Auto-Scanner" or "Run Hardhat Simulation" to populate real-time arbitrage spreads.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: Pair Discovery Engine -->
+      <section class="tab-pane" id="tab-discovery">
+        <div class="card filter-card">
+          <div class="card-header">
+            <h2 class="card-title">Automated Multi-DEX Pair Discovery</h2>
+            <span class="card-sub">Scans DexScreener API for exotic tokens listed across 2+ DEXes with sufficient liquidity</span>
+          </div>
+          
+          <div class="discovery-form">
+            <div class="form-group">
+              <label for="select-disc-chain">Target Blockchain</label>
+              <select id="select-disc-chain" class="input-control">
+                <option value="base_sepolia">Base Sepolia (Testnet)</option>
+                <option value="base" selected>Base (Recommended - Ultra-Low Gas)</option>
+                <option value="arbitrum">Arbitrum One</option>
+                <option value="ethereum">Ethereum Mainnet</option>
+                <option value="optimism">Optimism</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="input-min-liq">Min Pool Liquidity ($USD)</label>
+              <input type="number" id="input-min-liq" class="input-control" value="2000" step="500">
+            </div>
+
+            <div class="form-group">
+              <label for="input-max-liq">Max Pool Liquidity ($USD)</label>
+              <input type="number" id="input-max-liq" class="input-control" value="80000" step="10000">
+            </div>
+
+            <div class="form-action">
+              <button class="btn btn-primary" id="btn-run-discovery">
+                <span class="btn-icon">⚡</span>
+                <span id="btn-run-disc-text">Scan DEX Markets</span>
+              </button>
+            </div>
+          </div>
+
+          <div style="margin-top: 16px; padding: 12px 16px; background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <label class="toggle-control">
+                <input type="checkbox" id="chk-small-pond" checked>
+                <span class="toggle-slider"></span>
+              </label>
+              <div>
+                <strong style="color: #c084fc; font-size: 0.9rem;">Solution 4: Small Pond Mode ($2k - $80k Sweet Spot)</strong>
+                <div style="font-size: 0.78rem; color: var(--text-secondary);">Filters out institutional mega-caps (WETH, USDC, WBTC) to avoid multi-million dollar bot latency battles.</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="btn btn-outline btn-sm" id="btn-preset-small-pond" style="border-color: #a855f7; color: #c084fc;">🎯 Preset: Small Pond ($2k-$80k)</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-preset-all-liq">🌐 Preset: All Pools ($2k-$5M)</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header flex-between">
+            <div>
+              <h2 class="card-title">Discovered Arbitrage Pairs</h2>
+              <span class="card-sub" id="disc-pairs-subtitle">Loading monitored pairs...</span>
+            </div>
+            <div class="card-actions">
+              <button class="btn btn-outline btn-sm" id="btn-refresh-pairs">↻ Refresh List</button>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table" id="table-discovered-pairs">
+              <thead>
+                <tr>
+                  <th>Token & Symbol</th>
+                  <th>Strategy</th>
+                  <th>DEX A (Borrow Pool)</th>
+                  <th>DEX B (Target Pool)</th>
+                  <th>Price Spread</th>
+                  <th>Safety Audit</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-discovered-pairs">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: Honeypot & Safety Auditor -->
+      <section class="tab-pane" id="tab-auditor">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Token Security & Anti-Honeypot Scanner</h2>
+            <span class="card-sub">Audits token smart contracts via GoPlus security engine before committing capital</span>
+          </div>
+
+          <div class="audit-input-box">
+            <div class="form-group flex-1">
+              <label for="input-audit-address">Token Contract Address</label>
+              <input type="text" id="input-audit-address" class="input-control font-mono" placeholder="0x... (e.g. 0x0d97f261b1e88845184f678e2d1e7a98d9fd38de)">
+            </div>
+            <div class="form-group w-48">
+              <label for="select-audit-chain">Chain</label>
+              <select id="select-audit-chain" class="input-control">
+                <option value="base" selected>Base (8453)</option>
+                <option value="arbitrum">Arbitrum (42161)</option>
+                <option value="ethereum">Ethereum (1)</option>
+                <option value="bsc">BSC (56)</option>
+              </select>
+            </div>
+            <div class="form-action">
+              <button class="btn btn-primary" id="btn-run-audit">
+                <span class="btn-icon">🛡️</span>
+                <span>Audit Contract</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="audit-quick-presets">
+            <span class="preset-label">Quick Test Presets:</span>
+            <button class="preset-chip" data-addr="0x0d97f261b1e88845184f678e2d1e7a98d9fd38de" data-chain="base">TYBG (Base Safe)</button>
+            <button class="preset-chip" data-addr="0xcb585250f852c6c6bf90434ab21a00f02833a4af" data-chain="base">cbXRP (Base Safe)</button>
+            <button class="preset-chip" data-addr="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" data-chain="base">USDC (Verified)</button>
+          </div>
+        </div>
+
+        <!-- Audit Result Display -->
+        <div class="card" id="audit-result-card" style="display: none;">
+          <div class="audit-header" id="audit-header">
+            <div class="audit-badge-large" id="audit-verdict-badge">SAFE</div>
+            <div class="audit-summary-text">
+              <h3 id="audit-token-title">Token Name (SYMBOL)</h3>
+              <p id="audit-verdict-desc" class="font-mono text-sm">Contract verified and clear of honeypot mechanics.</p>
+            </div>
+          </div>
+
+          <div class="audit-grid">
+            <div class="audit-item" id="audit-item-honeypot">
+              <div class="audit-item-icon">🍯</div>
+              <div class="audit-item-info">
+                <span class="audit-item-title">Honeypot Trap</span>
+                <span class="audit-item-val" id="audit-honeypot-val">Clean (0% Trap)</span>
+              </div>
+            </div>
+
+            <div class="audit-item" id="audit-item-taxes">
+              <div class="audit-item-icon">💸</div>
+              <div class="audit-item-info">
+                <span class="audit-item-title">Buy / Sell Tax</span>
+                <span class="audit-item-val" id="audit-tax-val">0.0% / 0.0%</span>
+              </div>
+            </div>
+
+            <div class="audit-item" id="audit-item-blacklist">
+              <div class="audit-item-icon">🚫</div>
+              <div class="audit-item-info">
+                <span class="audit-item-title">Transfer Blacklist</span>
+                <span class="audit-item-val" id="audit-blacklist-val">None Detected</span>
+              </div>
+            </div>
+
+            <div class="audit-item" id="audit-item-source">
+              <div class="audit-item-icon">📜</div>
+              <div class="audit-item-info">
+                <span class="audit-item-title">Contract Verified</span>
+                <span class="audit-item-val" id="audit-source-val">Open Source Code</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: Profit Optimizer & Math Calculator -->
+      <section class="tab-pane" id="tab-calculator">
+        <div class="card">
+          <div class="card-header flex-between">
+            <div>
+              <h2 class="card-title">Flash Loan Sizing & Profit Optimizer</h2>
+              <span class="card-sub">Computes the mathematically optimal trade size using convex ternary search</span>
+            </div>
+            <div>
+              <select id="select-calc-preset" class="input-control select-sm">
+                <option value="hardhat_sim">Preset: Hardhat Simulation (+10% Spread)</option>
+                <option value="meme_high">Preset: Exotic Meme Pair (+5% Spread)</option>
+                <option value="stable_micro">Preset: Stable Discrepancy (+0.3% Spread)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Flow Diagram Visual -->
+          <div class="flash-diagram">
+            <div class="diagram-step">
+              <span class="step-num">1</span>
+              <span class="step-title">Pool A (Borrow)</span>
+              <span class="step-desc">Zero Collateral Flash Loan</span>
+            </div>
+            <div class="diagram-arrow">➔</div>
+            <div class="diagram-step">
+              <span class="step-num">2</span>
+              <span class="step-title">Pool B (Swap)</span>
+              <span class="step-desc">Sell at Higher Price</span>
+            </div>
+            <div class="diagram-arrow">➔</div>
+            <div class="diagram-step">
+              <span class="step-num">3</span>
+              <span class="step-title">Repay Loan + Fee</span>
+              <span class="step-desc">Automatic in same TX</span>
+            </div>
+            <div class="diagram-arrow">➔</div>
+            <div class="diagram-step highlight">
+              <span class="step-num">4</span>
+              <span class="step-title">Net Profit</span>
+              <span class="step-desc">Retained in Wallet</span>
+            </div>
+          </div>
+
+          <div class="calc-grid">
+            <!-- Pool A Inputs -->
+            <div class="pool-box">
+              <h3 class="pool-box-title">DEX A (Borrow Pool)</h3>
+              <div class="form-group">
+                <label for="input-r0-A">Reserve 0 (Borrow Token)</label>
+                <input type="text" id="input-r0-A" class="input-control font-mono" value="100000000000000000000">
+                <span class="input-hint">100.0 Token0 (18 decimals)</span>
+              </div>
+              <div class="form-group">
+                <label for="input-r1-A">Reserve 1 (Quote Token)</label>
+                <input type="text" id="input-r1-A" class="input-control font-mono" value="200000000000000000000000">
+                <span class="input-hint">200,000.0 Token1 (Price: 2,000.00)</span>
+              </div>
+            </div>
+
+            <!-- Pool B Inputs -->
+            <div class="pool-box">
+              <h3 class="pool-box-title">DEX B (Target Sell Pool)</h3>
+              <div class="form-group">
+                <label for="input-r0-B">Reserve 0 (Target Token)</label>
+                <input type="text" id="input-r0-B" class="input-control font-mono" value="100000000000000000000">
+                <span class="input-hint">100.0 Token0 (18 decimals)</span>
+              </div>
+              <div class="form-group">
+                <label for="input-r1-B">Reserve 1 (Quote Token)</label>
+                <input type="text" id="input-r1-B" class="input-control font-mono" value="220000000000000000000000">
+                <span class="input-hint">220,000.0 Token1 (Price: 2,200.00)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- MEV Tip Control -->
+          <div class="calc-settings-row">
+            <div class="slider-group">
+              <div class="slider-header">
+                <label for="input-tip-range">Validator Tip (Flashbots MEV Bribe):</label>
+                <span class="slider-val" id="tip-val-display">85%</span>
+              </div>
+              <input type="range" id="input-tip-range" min="50" max="99" value="85" class="slider-control">
+              <span class="slider-desc">Giving 85% tip ensures block builders include your bundle first without competitor front-running.</span>
+            </div>
+
+            <div class="calc-btn-wrap">
+              <button class="btn btn-primary btn-lg" id="btn-compute-math">
+                <span class="btn-icon">⚡</span>
+                <span>Compute Optimal Trade</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results Breakdown -->
+        <div class="card" id="calc-results-card">
+          <div class="card-header">
+            <h2 class="card-title">Optimal Trade Output & Economics</h2>
+            <span class="card-sub" id="calc-spread-tag">Spread: +10.00%</span>
+          </div>
+
+          <div class="result-metrics-grid">
+            <div class="res-card">
+              <span class="res-label">Optimal Borrow Amount</span>
+              <span class="res-value text-accent" id="res-optimal-borrow">2.235 Token0</span>
+              <span class="res-sub">Maximum trade size before slippage</span>
+            </div>
+
+            <div class="res-card">
+              <span class="res-label">Expected Output on DEX B</span>
+              <span class="res-value" id="res-output-b">4,714.28 Token1</span>
+              <span class="res-sub">Gross proceeds from swap</span>
+            </div>
+
+            <div class="res-card">
+              <span class="res-label">Repayment Required (DEX A)</span>
+              <span class="res-value" id="res-repay-a">4,504.84 Token1</span>
+              <span class="res-sub">Principal + 0.3% flash fee</span>
+            </div>
+
+            <div class="res-card highlight-profit">
+              <span class="res-label">Gross Arbitrage Profit</span>
+              <span class="res-value text-success" id="res-gross-profit">+209.44 Token1</span>
+              <span class="res-sub">Gross arbitrage yield</span>
+            </div>
+
+            <div class="res-card">
+              <span class="res-label">Validator Bribe (85%)</span>
+              <span class="res-value" id="res-validator-tip">178.03 Token1</span>
+              <span class="res-sub">Paid only upon bundle inclusion</span>
+            </div>
+
+            <div class="res-card highlight-net">
+              <span class="res-label">Net Searcher Profit</span>
+              <span class="res-value text-accent" id="res-net-profit">+31.41 Token1</span>
+              <span class="res-sub">Directly deposited to your wallet</span>
+            </div>
+          </div>
+
+          <!-- Slippage vs Profit Chart Table -->
+          <div class="curve-section">
+            <h3 class="curve-title">Slippage Convexity Curve (Borrow Size vs Realized Profit)</h3>
+            <p class="curve-desc">Notice how borrowing less yields smaller profits, but borrowing too much causes excessive price impact that destroys profit:</p>
+            <div class="curve-table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Borrow Size (% of Optimal)</th>
+                    <th>Borrow Amount</th>
+                    <th>Gross Realized Profit</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="tbody-curve">
+                  <!-- Dynamic curve rows -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: Config & Keys (.env Manager) -->
+      <section class="tab-pane" id="tab-settings">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Bot Configuration & Secrets Manager</h2>
+            <span class="card-sub">Settings are encrypted and saved strictly on your local disk in .env</span>
+          </div>
+
+          <form id="form-config" class="config-form">
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="cfg-chain">Blockchain Network</label>
+                <select id="cfg-chain" class="input-control">
+                  <option value="base_sepolia" selected>Base Sepolia (Testnet)</option>
+                  <option value="base">Base (L2 - Fast & Low Fee)</option>
+                  <option value="arbitrum">Arbitrum One</option>
+                  <option value="ethereum">Ethereum Mainnet</option>
+                  <option value="sepolia">Sepolia Testnet</option>
+                </select>
+              </div>
+
+              <div class="form-group flex-2">
+                <label for="cfg-rpc">RPC Provider URL (HTTP)</label>
+                <input type="text" id="cfg-rpc" class="input-control font-mono" placeholder="https://mainnet.base.org">
+                <div class="rpc-presets">
+                  <button type="button" class="btn-link" id="preset-base-rpc">Base Mainnet</button>
+                  <button type="button" class="btn-link" id="preset-base-sepolia-rpc">Base Sepolia Testnet</button>
+                  <button type="button" class="btn-link" id="preset-arb-rpc">Arbitrum Public</button>
+                  <button type="button" class="btn-link" id="preset-ankr-rpc">Ankr ETH</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="cfg-wss">Solution 2: WebSocket RPC URL (WSS Event Stream)</label>
+                <input type="text" id="cfg-wss" class="input-control font-mono" placeholder="wss://base-rpc.publicnode.com">
+                <div class="rpc-presets">
+                  <button type="button" class="btn-link" id="preset-base-wss">Base Mainnet WSS</button>
+                  <button type="button" class="btn-link" id="preset-base-sepolia-wss">Base Sepolia WSS</button>
+                  <button type="button" class="btn-link" id="preset-arb-wss">Arbitrum WSS</button>
+                  <button type="button" class="btn-link" id="preset-eth-wss">Ethereum WSS</button>
+                </div>
+                <span class="input-hint">Listens directly to pool contract Sync events on every trade, eliminating the 5s DexScreener delay.</span>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="cfg-private-key">Searcher Wallet Private Key</label>
+                <div class="password-wrap">
+                  <input type="password" id="cfg-private-key" class="input-control font-mono" placeholder="Enter private key (stored locally)">
+                  <button type="button" class="btn-ghost btn-sm" id="btn-toggle-key">👁 Show</button>
+                </div>
+                <span class="input-hint">Never share your private key. Used only to sign local bundles.</span>
+              </div>
+
+              <div class="form-group flex-1">
+                <label for="cfg-executor">FlashArbExecutor Contract Address</label>
+                <input type="text" id="cfg-executor" class="input-control font-mono" placeholder="0x... (Deployed smart contract)">
+                <span class="input-hint">Address returned from: npx hardhat run scripts/deploy.js</span>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="cfg-pair-a">Active Pair A (Borrow Pool)</label>
+                <input type="text" id="cfg-pair-a" class="input-control font-mono" placeholder="0x... (DEX A Pair Address)">
+              </div>
+              <div class="form-group flex-1">
+                <label for="cfg-pair-b">Active Pair B (Target Pool)</label>
+                <input type="text" id="cfg-pair-b" class="input-control font-mono" placeholder="0x... (DEX B Pair Address)">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="cfg-relay">Flashbots / MEV Relay</label>
+                <input type="text" id="cfg-relay" class="input-control font-mono" value="https://relay.flashbots.net">
+              </div>
+              <div class="form-group flex-1">
+                <label for="cfg-min-profit">Min Net Profit Threshold ($)</label>
+                <input type="number" id="cfg-min-profit" class="input-control" value="10">
+              </div>
+              <div class="form-group flex-1">
+                <label for="cfg-tip-percent">Default Tip / Bribe %</label>
+                <input type="number" id="cfg-tip-percent" class="input-control" value="85" min="50" max="99">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="cfg-small-pond">Solution 4: Small Pond Mode ($2,000 - $80,000 Sweet Spot)</label>
+                <select id="cfg-small-pond" class="input-control">
+                  <option value="true" selected>Enabled (Focus on $2k - $80k long-tail liquidity & Intra-DEX Triangular)</option>
+                  <option value="false">Disabled (Scan all liquidity up to $5M+)</option>
+                </select>
+                <span class="input-hint">Keeps searcher transactions outside the crosshairs of multi-million dollar MEV firms.</span>
+              </div>
+            </div>
+
+            <div class="form-footer">
+              <button type="submit" class="btn btn-primary" id="btn-save-config">
+                <span class="btn-icon">💾</span>
+                <span>Save Configuration (.env)</span>
+              </button>
+              <span class="save-status" id="save-status-msg"></span>
+            </div>
+          </form>
+        </div>
+
+        <!-- Documentation Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Guides & Setup Documentation</h2>
+            <span class="card-sub">Step-by-step documentation for deployment, troubleshooting, and concepts</span>
+          </div>
+
+          <div class="doc-links-grid">
+            <div class="doc-card">
+              <span class="doc-badge">Step-by-Step</span>
+              <h3 class="doc-card-title">Beginner Setup Guide</h3>
+              <p class="doc-card-desc">Written for absolute beginners: Node installation, creating wallet, getting free testnet faucet, and launching the bot.</p>
+              <span class="doc-file-tag">COMPLETE_SETUP_GUIDE.md</span>
+            </div>
+
+            <div class="doc-card">
+              <span class="doc-badge">Deployment</span>
+              <h3 class="doc-card-title">L2 Deployment Guide</h3>
+              <p class="doc-card-desc">Deploying on Base & Arbitrum, taking advantage of 1-cent gas fees and low-competition exotic meme tokens.</p>
+              <span class="doc-file-tag">L2_DEPLOYMENT_GUIDE.md</span>
+            </div>
+
+            <div class="doc-card">
+              <span class="doc-badge">Architecture</span>
+              <h3 class="doc-card-title">Flashbots MEV Mechanics</h3>
+              <p class="doc-card-desc">Deep dive into private bundles, avoiding sandwich attacks, and direct validator bribes.</p>
+              <span class="doc-file-tag">ARBITRAGE_SYSTEM_GUIDE.md</span>
+            </div>
+
+            <div class="doc-card">
+              <span class="doc-badge" style="background: rgba(16, 185, 129, 0.2); color: var(--accent-green);">1ms Speed</span>
+              <h3 class="doc-card-title">Solution 3: Cloud Co-location</h3>
+              <p class="doc-card-desc">Deploy in AWS North Virginia (us-east-1) next to the Base Sequencer. Drops ping from 250ms to 1.8ms and runs 24/7.</p>
+              <span class="doc-file-tag">SOLUTION_3_CLOUD_COLOCATION_GUIDE.md</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Notification Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

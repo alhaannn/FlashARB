@@ -1,0 +1,42 @@
+# Environment variables & secrets (NEVER commit keys or credentials)
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Dependencies
+node_modules/
+jspm_packages/
+
+# Hardhat, Solidity & Build Artifacts
+artifacts/
+cache/
+typechain/
+typechain-types/
+
+# Execution Logs & Runtime History
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Testing & Coverage
+coverage/
+coverage.json
+.nyc_output/
+
+# OS & Editor generated files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+scratch/
+tmp/
+temp/

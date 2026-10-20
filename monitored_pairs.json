@@ -1,0 +1,182 @@
+[
+  {
+    "symbol": "AERO",
+    "tokenAddress": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
+    "quoteSymbol": "USDC",
+    "spreadPercent": "0.83%",
+    "strategy": "Memecoin Liquid Spread",
+    "isSmallPond": true,
+    "poolA": {
+      "dex": "aerodrome",
+      "pairAddress": "0xBE00fF35AF70E8415D0eB605a286D8A45466A4c1",
+      "priceUsd": "0.8048",
+      "liquidityUsd": 1611860.01
+    },
+    "poolB": {
+      "dex": "uniswap",
+      "pairAddress": "0xE5B5f522E98B5a2baAe212d4dA66b865B781DB97",
+      "priceUsd": "0.7982",
+      "liquidityUsd": 214185.08
+    }
+  },
+  {
+    "symbol": "KEYCAT",
+    "tokenAddress": "0x9a26f5433671751c3276a065f57e5a02d2817973",
+    "quoteSymbol": "WETH",
+    "spreadPercent": "0.41%",
+    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "isSmallPond": true,
+    "poolA": {
+      "dex": "uniswap",
+      "pairAddress": "0x377FeeeD4820B3B28D1ab429509e7A0789824fCA",
+      "priceUsd": "0.0005118",
+      "liquidityUsd": 758294.21
+    },
+    "poolB": {
+      "dex": "aerodrome",
+      "pairAddress": "0xB211a9DDff3a10806c8fdb92Dbc4c34596A23F84",
+      "priceUsd": "0.0005139",
+      "liquidityUsd": 19479.51
+    }
+  },
+  {
+    "symbol": "AERO",
+    "tokenAddress": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
+    "quoteSymbol": "CBBTC",
+    "spreadPercent": "0.25%",
+    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "isSmallPond": true,
+    "poolA": {
+      "dex": "aerodrome",
+      "pairAddress": "0xdFe5F275020def30993f042174Fc2D335678b626",
+      "priceUsd": "0.7986",
+      "liquidityUsd": 2091855.7
+    },
+    "poolB": {
+      "dex": "uniswap",
+      "pairAddress": "0x714f049CaC863036F207a8BD6b283f822f61D079",
+      "priceUsd": "0.8006",
+      "liquidityUsd": 46170.95
+    }
+  },
+  {
+    "symbol": "VIRTUAL",
+    "tokenAddress": "0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b",
+    "quoteSymbol": "WETH",
+    "spreadPercent": "0.21%",
+    "strategy": "Memecoin Liquid Spread",
+    "isSmallPond": true,
+    "poolA": {
+      "dex": "uniswap",
+      "pairAddress": "0xE31c372a7Af875b3B5E0F3713B17ef51556da667",
+      "priceUsd": "0.6541",
+      "liquidityUsd": 1288122.73
+    },
+    "poolB": {
+      "dex": "aerodrome",
+      "pairAddress": "0xC200F21EfE67c7F41B81A854c26F9cdA80593065",
+      "priceUsd": "0.6555",
+      "liquidityUsd": 483702.73
+    }
+  },
+  {
+    "symbol": "BRETT",
+    "tokenAddress": "0x532f27101965dd16442e59d40670faf5ebb142e4",
+    "quoteSymbol": "WETH",
+    "spreadPercent": "0.11%",
+    "strategy": "Memecoin Liquid Spread",
+    "isSmallPond": true,
+    "poolA": {
+      "dex": "uniswap",
+      "pairAddress": "0xBA3F945812a83471d709BCe9C3CA699A19FB46f7",
+      "priceUsd": "0.004668",
+      "liquidityUsd": 1124989.64
+    },
+    "poolB": {
+      "dex": "aerodrome",
+      "pairAddress": "0x4e829F8A5213c42535AB84AA40BD4aDCCE9cBa02",
+      "priceUsd": "0.004673",
+      "liquidityUsd": 740113.07
+    }
+  },
+  {
+    "symbol": "DEGEN",
+    "tokenAddress": "0x4ed4e862860bed51a9570b96d89af5e1b0efefed",
+    "quoteSymbol": "WETH",
+    "spreadPercent": "0.07%",
+    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "isSmallPond": true,
+    "poolA": {
+      "dex": "uniswap",
+      "pairAddress": "0xc9034c3E7F58003E6ae0C8438e7c8f4598d5ACAA",
+      "priceUsd": "0.0009419",
+      "liquidityUsd": 265350.71
+    },
+    "poolB": {
+      "dex": "aerodrome",
+      "pairAddress": "0x2C4909355b0C036840819484c3A882A95659aBf3",
+      "priceUsd": "0.0009426",
+      "liquidityUsd": 30037.61
+    }
+  },
+  {
+    "symbol": "VIRTUAL",
+    "tokenAddress": "0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b",
+    "quoteSymbol": "USDC",
+    "spreadPercent": "0.06%",
+    "strategy": "Memecoin Liquid Spread",
+    "isSmallPond": true,
+    "poolA": {
+      "dex": "uniswap",
+      "pairAddress": "0x529d2863a1521d0b57db028168fdE2E97120017C",
+      "priceUsd": "0.6549",
+      "liquidityUsd": 799669.19
+    },
+    "poolB": {
+      "dex": "pancakeswap",
+      "pairAddress": "0x7CB770D0513c30e0CB45E4899e4a2CbEEd6F9830",
+      "priceUsd": "0.6545",
+      "liquidityUsd": 176547.44
+    }
+  },
+  {
+    "symbol": "AERO",
+    "tokenAddress": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
+    "quoteSymbol": "WETH",
+    "spreadPercent": "0.06%",
+    "strategy": "Memecoin Liquid Spread",
+    "isSmallPond": true,
+    "poolA": {
+      "dex": "uniswap",
+      "pairAddress": "0x3d5D143381916280ff91407FeBEB52f2b60f33Cf",
+      "priceUsd": "0.8002",
+      "liquidityUsd": 1610329.99
+    },
+    "poolB": {
+      "dex": "aerodrome",
+      "pairAddress": "0x82321f3BEB69f503380D6B233857d5C43562e2D0",
+      "priceUsd": "0.8007",
+      "liquidityUsd": 464816.43
+    }
+  },
+  {
+    "symbol": "TOSHI",
+    "tokenAddress": "0xac1bd2486aaf3b5c0fc3fd868558b082a531b2b4",
+    "quoteSymbol": "WETH",
+    "spreadPercent": "0.00%",
+    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "isSmallPond": true,
+    "poolA": {
+      "dex": "uniswap",
+      "pairAddress": "0x4b0Aaf3EBb163dd45F663b38b6d93f6093EBC2d3",
+      "priceUsd": "0.0001067",
+      "liquidityUsd": 1026987.58
+    },
+    "poolB": {
+      "dex": "aerodrome",
+      "pairAddress": "0x74E4c08Bb50619b70550733D32b7e60424E9628e",
+      "priceUsd": "0.0001067",
+      "liquidityUsd": 26496.28
+    }
+  }
+]
