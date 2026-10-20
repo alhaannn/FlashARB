@@ -13,6 +13,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "test": "node --test test/**/*.test.js",
     "test:sim": "npx hardhat run scripts/run_test_suite.js",
     "find:pairs": "node scripts/auto_pair_finder.js",
     "scanner": "node scripts/auto_scanner.js"

@@ -2,7 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { ethers } from "ethers";
 import { findArbitrageCandidates } from "./auto_pair_finder.js";
-import { findOptimalBorrowAmount } from "./math_optimizer.js";
+import { evaluateTwoPoolArbitrage, findOptimalBorrowAmount } from "./math_optimizer.js";
+import { formatRevertDiagnostics } from "./revert_diagnostics.js";
+import { executeAndTrackLifecycle, TxStatus } from "./tx_lifecycle.js";
+import { resolveBorrowToken0, getTokenDecimals, formatTokenUnits } from "./token_helpers.js";
 import { FlashbotsBundleEngine } from "./flashbots_bundle_engine.js";
 import { WebSocketSyncListener } from "./ws_sync_listener.js";
 import "dotenv/config";
@@ -139,66 +142,81 @@ async function main() {
   provider.on("block", async (blockNumber) => {
     for (const target of pairContracts) {
       try {
-        const [resA, resB] = await Promise.all([
+        const [resA, resB, t0A, t1A, t0B, t1B] = await Promise.all([
           target.contractA.getReserves(),
-          target.contractB.getReserves()
+          target.contractB.getReserves(),
+          target.contractA.token0(),
+          target.contractA.token1(),
+          target.contractB.token0(),
+          target.contractB.token1()
         ]);
 
-        const r0_A = BigInt(resA.reserve0);
-        const r1_A = BigInt(resA.reserve1);
-        const r0_B = BigInt(resB.reserve0);
-        const r1_B = BigInt(resB.reserve1);
+        const best = evaluateTwoPoolArbitrage(
+          { pairAddress: target.addressA, token0: t0A, token1: t1A, reserve0: resA.reserve0, reserve1: resA.reserve1 },
+          { pairAddress: target.addressB, token0: t0B, token1: t1B, reserve0: resB.reserve0, reserve1: resB.reserve1 }
+        );
 
-        // Check Direction 1 (Borrow on A -> Sell on B)
-        const dir1 = findOptimalBorrowAmount(r0_A, r1_A, r0_B, r1_B);
-        // Check Direction 2 (Borrow on B -> Sell on A)
-        const dir2 = findOptimalBorrowAmount(r0_B, r1_B, r0_A, r1_A);
+        if (best && best.isProfitable) {
+          const borrowDecimals = await getTokenDecimals(best.borrowToken, provider);
+          const repayDecimals = await getTokenDecimals(best.repayToken, provider);
 
-        const best = dir1.maxProfit > dir2.maxProfit
-          ? { ...dir1, borrowPool: target.addressA, targetPool: target.addressB, borrowDex: target.poolA_dex, targetDex: target.poolB_dex }
-          : { ...dir2, borrowPool: target.addressB, targetPool: target.addressA, borrowDex: target.poolB_dex, targetDex: target.poolA_dex };
-
-        if (best.isProfitable) {
           console.log(`\n[Block #${blockNumber}] 🔥 ARBITRAGE OPPORTUNITY FOUND!`);
           console.log(`  Token:          ${target.symbol} / ${target.quote}`);
-          console.log(`  Route:          ${best.borrowDex} -> ${best.targetDex}`);
-          console.log(`  Optimal Borrow: ${ethers.formatEther(best.optimalBorrow)}`);
-          console.log(`  Net Profit:     +${ethers.formatEther(best.maxProfit)} ${target.quote}`);
+          console.log(`  Route:          Borrow on ${best.borrowPool} -> Target ${best.targetPool}`);
+          console.log(`  Optimal Borrow: ${formatTokenUnits(best.optimalBorrow, borrowDecimals)}`);
+          console.log(`  Net Profit:     +${formatTokenUnits(best.maxProfit, repayDecimals)} (raw: ${best.maxProfit})`);
 
           if (privateKey && executorAddress) {
             console.log(`  [Pre-Flight] Simulating trade off-chain with staticCall ($0 gas)...`);
             const signer = new ethers.Wallet(privateKey, provider);
             const contract = new ethers.Contract(executorAddress, EXECUTOR_ABI, signer);
+            const minProfitRaw = (best.maxProfit * 90n) / 100n;
 
             try {
-              // 1. Pre-flight static simulation against latest state
-              // If this fails, it throws locally: ZERO gas burned!
-              const borrowToken0 = best.borrowToken0 !== undefined ? Boolean(best.borrowToken0) : true;
               await contract.executeFlashArb.staticCall(
                 best.borrowPool,
                 best.targetPool,
                 best.optimalBorrow,
-                borrowToken0,
-                (best.maxProfit * 90n) / 100n, // 10% slippage buffer
+                best.borrowToken0,
+                minProfitRaw,
                 0n
               );
               console.log(`  [Pre-Flight PASSED] Validated on-chain! Broadcasting transaction...`);
-
-              // 2. Only broadcast after passing pre-flight simulation
-              const tx = await contract.executeFlashArb(
-                best.borrowPool,
-                best.targetPool,
-                best.optimalBorrow,
-                borrowToken0,
-                (best.maxProfit * 90n) / 100n,
-                0n
-              );
-              console.log(`  [Confirmed] Tx Hash: ${tx.hash}`);
-              await tx.wait(1);
             } catch (simError) {
-              console.log(`  [Pre-Flight BLOCKED] Simulation reverted: ${simError.reason || simError.message}`);
+              const diag = formatRevertDiagnostics(simError, {
+                targetContract: executorAddress,
+                chainId: chain,
+                functionName: "executeFlashArb",
+                poolAddresses: [best.borrowPool, best.targetPool],
+                tradeParams: {
+                  amountBorrow: best.optimalBorrow.toString(),
+                  borrowToken0: best.borrowToken0,
+                  minProfit: minProfitRaw.toString()
+                }
+              });
+              console.log(`  [Pre-Flight BLOCKED] ${diag.diagnosticString}`);
               console.log(`  [Gas Protected] Transaction dropped in memory. $0.00 gas spent!`);
+              continue;
             }
+
+            const lifecycle = await executeAndTrackLifecycle(
+              contract,
+              "executeFlashArb",
+              [best.borrowPool, best.targetPool, best.optimalBorrow, best.borrowToken0, minProfitRaw, 0n],
+              {
+                onStatusChange: (status, details) => {
+                  if (status === TxStatus.SUBMITTED) {
+                    console.log(`  [SUBMITTED] Tx Broadcast: ${details.txHash}`);
+                  } else if (status === TxStatus.PENDING) {
+                    console.log(`  [PENDING] Waiting for block inclusion...`);
+                  } else if (status === TxStatus.CONFIRMED) {
+                    console.log(`  [CONFIRMED] Tx Block #${details.receipt.blockNumber} Mined! Realized Profit: +${formatTokenUnits(best.maxProfit, repayDecimals)}`);
+                  } else if (status === TxStatus.FAILED) {
+                    console.log(`  [FAILED] Transaction reverted: ${details.error}`);
+                  }
+                }
+              }
+            );
           }
         }
       } catch {

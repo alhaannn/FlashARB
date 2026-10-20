@@ -40,6 +40,17 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
         address recipient;
     }
 
+    // Active execution context guards to prevent unauthenticated callbacks and reentrancy
+    address private _activeV2BorrowPool;
+
+    struct V3SwapContext {
+        address expectedPool;
+        address payingToken;
+        uint256 maxAmountToPay;
+        bool callbackExecuted;
+    }
+    V3SwapContext private _v3Context;
+
     constructor(address _weth) Ownable(msg.sender) {
         require(_weth != address(0), "FlashArb: Invalid WETH");
         WETH = _weth;
@@ -55,7 +66,9 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
         uint256 validatorTip
     ) external onlyOwner {
         require(amountBorrow > 0, "FlashArb: Zero borrow amount");
+        require(poolBorrow != address(0) && poolTarget != address(0), "FlashArb: Zero pool address");
         require(poolBorrow != poolTarget, "FlashArb: Identical pools");
+        require(_activeV2BorrowPool == address(0), "FlashArb: Active swap in progress");
 
         bytes memory data = abi.encode(
             ArbParams({
@@ -74,7 +87,9 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
         uint256 amount0Out = borrowToken0 ? amountBorrow : 0;
         uint256 amount1Out = borrowToken0 ? 0 : amountBorrow;
 
+        _activeV2BorrowPool = poolBorrow;
         IUniswapV2Pair(poolBorrow).swap(amount0Out, amount1Out, address(this), data);
+        _activeV2BorrowPool = address(0);
     }
 
     /// @notice Initiates a 3-hop intra-DEX triangular flash swap arbitrage (Solution 4)
@@ -89,7 +104,9 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
         uint256 validatorTip
     ) external onlyOwner {
         require(amountBorrow > 0, "FlashArb: Zero borrow amount");
+        require(pool1 != address(0) && pool2 != address(0) && pool3 != address(0), "FlashArb: Zero pool address");
         require(pool1 != pool2 && pool2 != pool3 && pool1 != pool3, "FlashArb: Duplicate pools in triangle");
+        require(_activeV2BorrowPool == address(0), "FlashArb: Active swap in progress");
 
         bytes memory data = abi.encode(
             ArbParams({
@@ -108,7 +125,9 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
         uint256 amount0Out = borrowToken0 ? amountBorrow : 0;
         uint256 amount1Out = borrowToken0 ? 0 : amountBorrow;
 
+        _activeV2BorrowPool = pool1;
         IUniswapV2Pair(pool1).swap(amount0Out, amount1Out, address(this), data);
+        _activeV2BorrowPool = address(0);
     }
 
     /// @notice Solution 5: Executes flash swap between Uniswap V2 and Uniswap V3 / Slipstream
@@ -122,6 +141,8 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
         uint256 validatorTip
     ) external onlyOwner {
         require(amountBorrow > 0, "FlashArb: Zero borrow amount");
+        require(poolV2Borrow != address(0) && poolV3Target != address(0), "FlashArb: Zero pool address");
+        require(_activeV2BorrowPool == address(0), "FlashArb: Active swap in progress");
 
         bytes memory data = abi.encode(
             ArbParams({
@@ -140,7 +161,9 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
         uint256 amount0Out = borrowToken0 ? amountBorrow : 0;
         uint256 amount1Out = borrowToken0 ? 0 : amountBorrow;
 
+        _activeV2BorrowPool = poolV2Borrow;
         IUniswapV2Pair(poolV2Borrow).swap(amount0Out, amount1Out, address(this), data);
+        _activeV2BorrowPool = address(0);
     }
 
     /// @notice Callback invoked by Uniswap V2 pair during flash swap
@@ -151,9 +174,10 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
         bytes calldata data
     ) external override {
         require(sender == address(this), "FlashArb: Unauthorized sender");
+        require(_activeV2BorrowPool != address(0) && msg.sender == _activeV2BorrowPool, "FlashArb: Unauthorized V2 caller");
 
         ArbParams memory params = abi.decode(data, (ArbParams));
-        require(msg.sender == params.poolBorrow, "FlashArb: Unauthorized caller");
+        require(msg.sender == params.poolBorrow, "FlashArb: Callback pool mismatch");
 
         if (params.arbType == ArbType.TWO_POOL) {
             _executeTwoPoolLogic(params);
@@ -166,6 +190,16 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
 
     function _executeTwoPoolLogic(ArbParams memory params) internal {
         (address borrowedToken, address repayToken) = _resolveTokens(params.poolBorrow, params.borrowToken0);
+
+        // Validate target pool tokens match expected pair
+        address targetT0 = IUniswapV2Pair(params.poolTarget).token0();
+        address targetT1 = IUniswapV2Pair(params.poolTarget).token1();
+        require(
+            (targetT0 == borrowedToken && targetT1 == repayToken) ||
+            (targetT0 == repayToken && targetT1 == borrowedToken),
+            "FlashArb: Token mismatch in target pool"
+        );
+
         uint256 amountRequired = _getRepaymentAmount(params.poolBorrow, params.amountBorrow, params.borrowToken0);
         uint256 amountOut = _executeTargetSwap(params.poolTarget, borrowedToken, params.amountBorrow);
 
@@ -218,8 +252,26 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
         (address borrowedToken, address repayToken) = _resolveTokens(params.poolBorrow, params.borrowToken0);
         uint256 amountRequired = _getRepaymentAmount(params.poolBorrow, params.amountBorrow, params.borrowToken0);
 
-        bool zeroForOne = (IUniswapV3Pool(params.poolTarget).token0() == borrowedToken);
+        address v3Token0 = IUniswapV3Pool(params.poolTarget).token0();
+        address v3Token1 = IUniswapV3Pool(params.poolTarget).token1();
+        require(
+            (v3Token0 == borrowedToken && v3Token1 == repayToken) ||
+            (v3Token0 == repayToken && v3Token1 == borrowedToken),
+            "FlashArb: Token mismatch in V3 pool"
+        );
+
+        require(_v3Context.expectedPool == address(0), "FlashArb: Active V3 swap in progress");
+
+        bool zeroForOne = (v3Token0 == borrowedToken);
         uint160 sqrtPriceLimitX96 = zeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341;
+
+        // Establish authenticated V3 callback context
+        _v3Context = V3SwapContext({
+            expectedPool: params.poolTarget,
+            payingToken: borrowedToken,
+            maxAmountToPay: params.amountBorrow,
+            callbackExecuted: false
+        });
 
         uint256 balBefore = IERC20(repayToken).balanceOf(address(this));
         IUniswapV3Pool(params.poolTarget).swap(
@@ -230,6 +282,9 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
             abi.encode(borrowedToken)
         );
         uint256 amountOut = IERC20(repayToken).balanceOf(address(this)) - balBefore;
+
+        require(_v3Context.callbackExecuted, "FlashArb: V3 callback not executed");
+        delete _v3Context;
 
         require(amountOut > amountRequired, "FlashArb: V2-V3 arb unprofitable");
         uint256 netProfit = amountOut - amountRequired;
@@ -254,8 +309,22 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
         int256 amount1Delta,
         bytes calldata data
     ) external override {
-        address payingToken = abi.decode(data, (address));
+        // Authenticate caller against the active execution context
+        require(_v3Context.expectedPool != address(0) && msg.sender == _v3Context.expectedPool, "FlashArb: Unauthorized V3 callback caller");
+        require(!_v3Context.callbackExecuted, "FlashArb: V3 callback already executed");
+
+        // Validate delta combination: one must be strictly positive (amount to pay), one non-positive (amount received)
+        require((amount0Delta > 0 && amount1Delta <= 0) || (amount1Delta > 0 && amount0Delta <= 0), "FlashArb: Inconsistent V3 deltas");
+
         uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
+        require(amountToPay <= _v3Context.maxAmountToPay, "FlashArb: Amount to pay exceeds borrow");
+
+        // Validate callback data payload against active context
+        require(data.length >= 32, "FlashArb: Invalid callback data length");
+        address payingToken = abi.decode(data, (address));
+        require(payingToken == _v3Context.payingToken, "FlashArb: Invalid paying token");
+
+        _v3Context.callbackExecuted = true;
         IERC20(payingToken).safeTransfer(msg.sender, amountToPay);
     }
 
@@ -291,12 +360,11 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
     function _handleValidatorTip(uint256 tip, address profitToken, uint256 profit) internal returns (uint256) {
         if (tip == 0) return profit;
         require(profit > tip, "FlashArb: Tip exceeds profit");
+        require(profitToken == WETH, "FlashArb: Tip only supported for WETH profit");
 
-        if (profitToken == WETH) {
-            IWETH(WETH).withdraw(tip);
-            (bool success, ) = block.coinbase.call{value: tip}("");
-            require(success, "FlashArb: Miner tip transfer failed");
-        }
+        IWETH(WETH).withdraw(tip);
+        (bool success, ) = block.coinbase.call{value: tip}("");
+        require(success, "FlashArb: Miner tip transfer failed");
         return profit - tip;
     }
 

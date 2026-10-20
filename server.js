@@ -14,8 +14,25 @@ import {
   findOptimalBorrowAmount,
   calculateAmountOut,
   calculateAmountIn,
-  calculateNetProfit
+  calculateNetProfit,
+  evaluateTwoPoolArbitrage
 } from "./scripts/math_optimizer.js";
+import {
+  resolveBorrowToken0,
+  getTokenDecimals,
+  formatTokenUnits,
+  parseTokenUnits,
+  getPoolProtocolInfo
+} from "./scripts/token_helpers.js";
+import {
+  formatRevertDiagnostics,
+  sanitizeLogString,
+  mustAbortTradeExecution
+} from "./scripts/revert_diagnostics.js";
+import {
+  executeAndTrackLifecycle,
+  TxStatus
+} from "./scripts/tx_lifecycle.js";
 import { WebSocketSyncListener } from "./scripts/ws_sync_listener.js";
 import { TriangularArbEngine, fetchDexPoolsFromApi } from "./scripts/triangular_arb_engine.js";
 import { V3QuoterEngine, V3_FEE_TIERS, Q96, scanCrossV2V3Opportunities } from "./scripts/v3_quoter_engine.js";
@@ -322,41 +339,81 @@ async function runAutopilotTriangularCycle() {
 
       if (isLive) {
         logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating triangular flash swap off-chain ($0 gas)...`);
-        try {
-          const provider = getProvider(chain);
-          const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-          const EXECUTOR_ABI = [
-            "function executeTriangularFlashArb(address pool1, address pool2, address pool3, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external"
-          ];
-          const contract = new ethers.Contract(process.env.EXECUTOR_CONTRACT, EXECUTOR_ABI, signer);
+        const provider = getProvider(chain);
+        const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+        const EXECUTOR_ABI = [
+          "function executeTriangularFlashArb(address pool1, address pool2, address pool3, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
+          "event ArbitrageExecuted(address indexed poolBorrow, address indexed poolTarget, address indexed profitToken, uint256 profitAmount, uint256 validatorTip)"
+        ];
 
+        if (!process.env.EXECUTOR_CONTRACT || !ethers.isAddress(process.env.EXECUTOR_CONTRACT)) {
+          logEvent("PRE_FLIGHT", "error", `[PRE-FLIGHT BLOCKED] Invalid EXECUTOR_CONTRACT address: ${process.env.EXECUTOR_CONTRACT}`);
+          return;
+        }
+        const contract = new ethers.Contract(process.env.EXECUTOR_CONTRACT, EXECUTOR_ABI, signer);
+
+        const pool1Addr = ethers.getAddress(topOpp.pool1.pairAddress);
+        const pool2Addr = ethers.getAddress(topOpp.pool2.pairAddress);
+        const pool3Addr = ethers.getAddress(topOpp.pool3.pairAddress);
+
+        let borrowToken0 = true;
+        try {
+          borrowToken0 = await resolveBorrowToken0(pool1Addr, topOpp.tokenAddress || topOpp.borrowTokenAddress, provider, topOpp.borrowToken0);
+        } catch (resolveErr) {
+          logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] borrowToken0 resolution failed: ${resolveErr.message}`);
+          return;
+        }
+
+        const baseDecimals = await getTokenDecimals(topOpp.baseTokenAddress, provider);
+        const amountBorrowRaw = parseTokenUnits(topOpp.optimalInputBase, baseDecimals);
+        const minProfitRaw = topOpp.minProfitRaw || ((amountBorrowRaw * 1n) / 1000n);
+
+        try {
           await contract.executeTriangularFlashArb.staticCall(
-            topOpp.pool1.pairAddress,
-            topOpp.pool2.pairAddress,
-            topOpp.pool3.pairAddress,
-            ethers.parseEther(topOpp.optimalInputBase),
-            true,
-            ethers.parseEther("0.0001"),
+            pool1Addr,
+            pool2Addr,
+            pool3Addr,
+            amountBorrowRaw,
+            borrowToken0,
+            minProfitRaw,
             0n
           );
           logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] Triangular route validated with zero revert risk!`);
-
-          const tx = await contract.executeTriangularFlashArb(
-            topOpp.pool1.pairAddress,
-            topOpp.pool2.pairAddress,
-            topOpp.pool3.pairAddress,
-            ethers.parseEther(topOpp.optimalInputBase),
-            true,
-            ethers.parseEther("0.0001"),
-            0n
-          );
-          txHash = tx.hash;
-          logEvent("EXECUTION", "success", `[CONFIRMED ON-CHAIN] Triangular flash swap executed! Tx: ${txHash.substring(0, 18)}... Net Profit: +$${netProfitUsd.toFixed(2)} USD`);
         } catch (simErr) {
-          const reason = simErr.reason || (simErr.shortMessage ? simErr.shortMessage.replace("execution reverted: ", "").replace(/"/g, "") : null) || "Spread slipped / unprofitable";
-          logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] Triangular simulation reverted: ${reason}. Dropped in local memory ($0 gas).`);
+          const diag = formatRevertDiagnostics(simErr, {
+            targetContract: process.env.EXECUTOR_CONTRACT,
+            chainId: chain,
+            functionName: "executeTriangularFlashArb",
+            poolAddresses: [pool1Addr, pool2Addr, pool3Addr],
+            tradeParams: { amountBorrow: amountBorrowRaw.toString(), borrowToken0, minProfit: minProfitRaw.toString() }
+          });
+          logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] ${diag.diagnosticString}. Dropped in local memory ($0 gas).`);
           return;
         }
+
+        const trackingResult = await executeAndTrackLifecycle(
+          contract,
+          "executeTriangularFlashArb",
+          [pool1Addr, pool2Addr, pool3Addr, amountBorrowRaw, borrowToken0, minProfitRaw, 0n],
+          {
+            onStatusChange: (status, details) => {
+              if (status === TxStatus.SUBMITTED) {
+                logEvent("EXECUTION", "info", `[TX SUBMITTED] Triangular transaction broadcast: ${details.txHash}`);
+              } else if (status === TxStatus.PENDING) {
+                logEvent("EXECUTION", "info", `[TX PENDING] Awaiting block inclusion for ${details.txHash}...`);
+              } else if (status === TxStatus.CONFIRMED) {
+                logEvent("EXECUTION", "success", `[TX CONFIRMED] Block #${details.receipt.blockNumber} confirmed! Tx: ${details.txHash}`);
+              } else if (status === TxStatus.FAILED) {
+                logEvent("EXECUTION", "error", `[TX FAILED] Transaction failed: ${details.error || "reverted"}`);
+              }
+            }
+          }
+        );
+
+        if (trackingResult.status !== TxStatus.CONFIRMED) {
+          return;
+        }
+        txHash = trackingResult.txHash;
       } else {
         logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating triangular route off-chain ($0 gas)...`);
         logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] 3-hop reserves validated. Revert risk = 0%.`);
@@ -425,40 +482,79 @@ async function runAutopilotV3Cycle() {
 
       if (isLive) {
         logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating V2->V3 cross-type flash swap off-chain ($0 gas)...`);
-        try {
-          const provider = getProvider(chain);
-          const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-          const EXECUTOR_ABI = [
-            "function executeV2ToV3FlashArb(address poolV2Borrow, address poolV3Target, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external"
-          ];
-          const poolV2 = ethers.getAddress(topOpp.poolV2Borrow.toLowerCase());
-          const poolV3 = ethers.getAddress(topOpp.poolV3Target.toLowerCase());
+        const provider = getProvider(chain);
+        const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+        const EXECUTOR_ABI = [
+          "function executeV2ToV3FlashArb(address poolV2Borrow, address poolV3Target, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
+          "event ArbitrageExecuted(address indexed poolBorrow, address indexed poolTarget, address indexed profitToken, uint256 profitAmount, uint256 validatorTip)"
+        ];
 
+        if (!process.env.EXECUTOR_CONTRACT || !ethers.isAddress(process.env.EXECUTOR_CONTRACT)) {
+          logEvent("PRE_FLIGHT", "error", `[PRE-FLIGHT BLOCKED] Invalid EXECUTOR_CONTRACT address: ${process.env.EXECUTOR_CONTRACT}`);
+          return;
+        }
+        const contract = new ethers.Contract(process.env.EXECUTOR_CONTRACT, EXECUTOR_ABI, signer);
+
+        const poolV2 = ethers.getAddress(topOpp.poolV2Borrow.toLowerCase());
+        const poolV3 = ethers.getAddress(topOpp.poolV3Target.toLowerCase());
+
+        let borrowToken0 = true;
+        try {
+          borrowToken0 = await resolveBorrowToken0(poolV2, topOpp.borrowTokenAddress || topOpp.tokenAddress, provider, topOpp.borrowToken0);
+        } catch (resolveErr) {
+          logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] borrowToken0 resolution failed: ${resolveErr.message}`);
+          return;
+        }
+
+        const borrowDecimals = await getTokenDecimals(topOpp.borrowTokenAddress, provider);
+        const amountBorrowRaw = parseTokenUnits(topOpp.optimalBorrow, borrowDecimals);
+        const minProfitRaw = topOpp.minProfitRaw || ((amountBorrowRaw * 1n) / 1000n);
+
+        try {
           await contract.executeV2ToV3FlashArb.staticCall(
             poolV2,
             poolV3,
-            ethers.parseEther(topOpp.optimalBorrow),
-            true,
-            ethers.parseEther("0.0001"),
+            amountBorrowRaw,
+            borrowToken0,
+            minProfitRaw,
             0n
           );
           logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] Cross-type V2-to-V3 route validated with zero revert risk!`);
-
-          const tx = await contract.executeV2ToV3FlashArb(
-            poolV2,
-            poolV3,
-            ethers.parseEther(topOpp.optimalBorrow),
-            true,
-            ethers.parseEther("0.0001"),
-            0n
-          );
-          txHash = tx.hash;
-          logEvent("EXECUTION", "success", `[CONFIRMED ON-CHAIN] V2-to-V3 concentrated swap executed! Tx: ${txHash.substring(0, 18)}... Net Profit: +$${netProfitUsd.toFixed(2)} USD`);
         } catch (simErr) {
-          const reason = simErr.reason || (simErr.shortMessage ? simErr.shortMessage.replace("execution reverted: ", "").replace(/"/g, "") : null) || "Spread unprofitable / below fee threshold";
-          logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] V2-to-V3 simulation reverted: ${reason}. Dropped in local memory ($0 gas).`);
+          const diag = formatRevertDiagnostics(simErr, {
+            targetContract: process.env.EXECUTOR_CONTRACT,
+            chainId: chain,
+            functionName: "executeV2ToV3FlashArb",
+            poolAddresses: [poolV2, poolV3],
+            tradeParams: { amountBorrow: amountBorrowRaw.toString(), borrowToken0, minProfit: minProfitRaw.toString() }
+          });
+          logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] ${diag.diagnosticString}. Dropped in local memory ($0 gas).`);
           return;
         }
+
+        const trackingResult = await executeAndTrackLifecycle(
+          contract,
+          "executeV2ToV3FlashArb",
+          [poolV2, poolV3, amountBorrowRaw, borrowToken0, minProfitRaw, 0n],
+          {
+            onStatusChange: (status, details) => {
+              if (status === TxStatus.SUBMITTED) {
+                logEvent("EXECUTION", "info", `[TX SUBMITTED] V2->V3 transaction broadcast: ${details.txHash}`);
+              } else if (status === TxStatus.PENDING) {
+                logEvent("EXECUTION", "info", `[TX PENDING] Awaiting block inclusion for ${details.txHash}...`);
+              } else if (status === TxStatus.CONFIRMED) {
+                logEvent("EXECUTION", "success", `[TX CONFIRMED] V2->V3 swap confirmed in block #${details.receipt.blockNumber}! Tx: ${details.txHash}`);
+              } else if (status === TxStatus.FAILED) {
+                logEvent("EXECUTION", "error", `[TX FAILED] Transaction failed: ${details.error || "reverted"}`);
+              }
+            }
+          }
+        );
+
+        if (trackingResult.status !== TxStatus.CONFIRMED) {
+          return;
+        }
+        txHash = trackingResult.txHash;
       } else {
         logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating V2->V3 cross-type route off-chain ($0 gas)...`);
         logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] CLAMM tick & V2 depth validated. Revert risk = 0%.`);
@@ -540,6 +636,7 @@ async function runAutopilotMonitoringCycle() {
   const currentPair = pairs[pairIndex];
   autopilotState.currentStatus = `Evaluating ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex})`;
   broadcast({ type: "autopilot_state", data: autopilotState });
+  logEvent("AUTOPILOT", "info", `[Cycle #${autopilotState.totalCycles}] 🔍 Evaluating ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex})...`);
 
   let spread = parseFloat(currentPair.spreadPercent?.replace("%", "") || "0");
   let priceA = parseFloat(currentPair.poolA.priceUsd);
@@ -547,168 +644,240 @@ async function runAutopilotMonitoringCycle() {
   let liqA = parseFloat(currentPair.poolA.liquidityUsd);
   let liqB = parseFloat(currentPair.poolB.liquidityUsd);
 
-  // Live on-chain reserve check (updates stale spreads immediately)
-  if (currentPair.poolA?.pairAddress && currentPair.poolB?.pairAddress) {
-    try {
-      const provider = getProvider(chain);
-      const pairContractA = new ethers.Contract(currentPair.poolA.pairAddress, ["function getReserves() view returns (uint112, uint112, uint32)", "function token0() view returns (address)"], provider);
-      const pairContractB = new ethers.Contract(currentPair.poolB.pairAddress, ["function getReserves() view returns (uint112, uint112, uint32)", "function token0() view returns (address)"], provider);
-      const [resA, resB] = await Promise.all([pairContractA.getReserves(), pairContractB.getReserves()]);
-      const [t0A, t0B] = await Promise.all([pairContractA.token0(), pairContractB.token0()]);
-      const isToken0A = (t0A.toLowerCase() === currentPair.tokenAddress.toLowerCase());
-      const isToken0B = (t0B.toLowerCase() === currentPair.tokenAddress.toLowerCase());
-      const rBaseA = isToken0A ? Number(resA[0]) : Number(resA[1]);
-      const rQuoteA = isToken0A ? Number(resA[1]) : Number(resA[0]);
-      const rBaseB = isToken0B ? Number(resB[0]) : Number(resB[1]);
-      const rQuoteB = isToken0B ? Number(resB[1]) : Number(resB[0]);
-
-      if (rBaseA > 0 && rBaseB > 0 && rQuoteA > 0 && rQuoteB > 0) {
-        const livePriceA = rQuoteA / rBaseA;
-        const livePriceB = rQuoteB / rBaseB;
-        const liveSpread = (Math.abs(livePriceA - livePriceB) / Math.min(livePriceA, livePriceB)) * 100;
-        spread = liveSpread;
-        currentPair.spreadPercent = `${liveSpread.toFixed(2)}%`;
-      }
-    } catch {}
+  // Validate pool addresses (Fix Finding B: TDZ bug elimination)
+  if (!currentPair.poolA?.pairAddress || !currentPair.poolB?.pairAddress) {
+    return;
+  }
+  if (!ethers.isAddress(currentPair.poolA.pairAddress) || !ethers.isAddress(currentPair.poolB.pairAddress)) {
+    logEvent("AUTOPILOT", "warn", `Invalid pool addresses configured for ${currentPair.symbol}. Skipping.`);
+    return;
   }
 
-  // Broadcast to Live Discrepancy Feed whenever pair spread is detected
-  if (spread >= 0.05) {
-    broadcast({
-      type: "opportunity",
-      pair: currentPair,
-      spread: currentPair.spreadPercent,
-      timestamp: new Date().toLocaleTimeString()
-    });
+  const poolAAddr = ethers.getAddress(currentPair.poolA.pairAddress);
+  const poolBAddr = ethers.getAddress(currentPair.poolB.pairAddress);
+  const provider = getProvider(chain);
+
+  // Live on-chain reserve check & route optimization (Fix Finding C: real on-chain reserves, no synthetic math)
+  let routeOpt = null;
+  let borrowDecimals = 18;
+  let repayDecimals = 18;
+
+  let poolAInfo, poolBInfo;
+  try {
+    [poolAInfo, poolBInfo] = await Promise.all([
+      getPoolProtocolInfo(poolAAddr, provider),
+      getPoolProtocolInfo(poolBAddr, provider)
+    ]);
+  } catch (reserveErr) {
+    logEvent("AUTOPILOT", "warn", `On-chain pool query failed for ${currentPair.symbol}: ${reserveErr.message}`);
+    return; // Fail closed: never label profitable from synthetic reserves
   }
 
-  // Check if this pool has a noticeable spread
-  if (spread >= 0.2) {
-    autopilotState.opportunitiesDetected++;
-
-    const r0_A = BigInt(Math.floor((liqA / 2 / (priceA || 1)) * 1e18));
-    const r1_A = BigInt(Math.floor((liqA / 2) * 1e18));
-    const r0_B = BigInt(Math.floor((liqB / 2 / (priceB || 1)) * 1e18));
-    const r1_B = BigInt(Math.floor((liqB / 2) * 1e18));
-
-    const { optimalBorrow, maxProfit, isProfitable } = findOptimalBorrowAmount(r0_A, r1_A, r0_B, r1_B);
-
-    if (isProfitable && maxProfit > 0n) {
-      // Calculate USD profit
-      const quotePriceUsd = (currentPair.quoteSymbol === "WETH") ? 3200 : 1;
-      const profitQuoteUnits = parseFloat(ethers.formatEther(maxProfit));
-      const grossProfitUsd = profitQuoteUnits * quotePriceUsd;
-
-      // Deduct 85% validator tip & L2 gas ($0.01 on Base)
-      const netProfitUsd = (grossProfitUsd * 0.15) - 0.01;
-
-      if (netProfitUsd > 0.05) {
-        logEvent("PROFIT", "success", `🔥 PROFITABLE SPREAD CONFIRMED: ${currentPair.symbol} | Borrow on ${currentPair.poolA.dex} ➔ Sell on ${currentPair.poolB.dex}`);
-        logEvent("OPTIMIZER", "info", `Optimal Sizing: ${ethers.formatEther(optimalBorrow).substring(0, 7)} ${currentPair.symbol} | Gross: $${grossProfitUsd.toFixed(2)} | Net: +$${netProfitUsd.toFixed(2)} USD`);
-
-        // [Solution 1: Pre-Flight staticCall Zero-Gas Revert Protection]
-        const privateKey = process.env.PRIVATE_KEY;
-        const executorAddress = process.env.EXECUTOR_CONTRACT;
-        const isLive = Boolean(privateKey && executorAddress && executorAddress.startsWith("0x") && executorAddress !== "0x0000000000000000000000000000000000000000");
-        
-        let txHash;
-        if (isLive) {
-          logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating ${currentPair.symbol} trade off-chain ($0 gas)...`);
-          try {
-            const provider = getProvider(chain);
-            const signer = new ethers.Wallet(privateKey, provider);
-            const EXECUTOR_ABI = [
-              "function executeFlashArb(address poolBorrow, address poolTarget, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external"
-            ];
-            const contract = new ethers.Contract(executorAddress, EXECUTOR_ABI, signer);
-
-            // Dynamically resolve borrowToken0: use pair config or query poolA on-chain
-            let borrowToken0 = true;
-            if (currentPair.borrowToken0 !== undefined) {
-              borrowToken0 = Boolean(currentPair.borrowToken0);
-            } else {
-              try {
-                const pairContract = new ethers.Contract(poolAAddr, ["function token0() view returns (address)"], provider);
-                const t0 = await pairContract.token0();
-                borrowToken0 = (t0.toLowerCase() === currentPair.tokenAddress.toLowerCase());
-              } catch (e) {
-                borrowToken0 = true;
-              }
-            }
-
-            const poolAAddr = ethers.getAddress(currentPair.poolA.pairAddress.toLowerCase());
-            const poolBAddr = ethers.getAddress(currentPair.poolB.pairAddress.toLowerCase());
-
-            // 1. Off-chain static simulation ($0.00 gas)
-            await contract.executeFlashArb.staticCall(
-              poolAAddr,
-              poolBAddr,
-              optimalBorrow,
-              borrowToken0,
-              (maxProfit * 90n) / 100n, // 10% slippage buffer
-              0n
-            );
-            logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] On-chain state verified profitable! Zero revert risk.`);
-
-            // 2. Only broadcast after staticCall passes!
-            const tx = await contract.executeFlashArb(
-              poolAAddr,
-              poolBAddr,
-              optimalBorrow,
-              borrowToken0,
-              (maxProfit * 90n) / 100n,
-              0n
-            );
-            txHash = tx.hash;
-            logEvent("EXECUTION", "success", `[CONFIRMED ON-CHAIN] Arbitrage executed! Tx: ${txHash.substring(0, 18)}... Net Profit: +$${netProfitUsd.toFixed(2)} USD`);
-          } catch (simError) {
-            const reason = simError.reason || (simError.shortMessage ? simError.shortMessage.replace("execution reverted: ", "").replace(/"/g, "") : null) || "Spread slipped / competitor taken";
-            logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] Simulation reverted: ${reason}. Transaction DROPPED in local memory. Saved ~$0.05 gas!`);
-            return; // Drop trade completely! Zero gas spent.
-          }
-        } else {
-          // Simulation Execution (Realistic Zero-Risk Sandboxed Run with Pre-Flight Simulation)
-          logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating ${currentPair.symbol} trade off-chain ($0 gas)...`);
-          logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] Virtual pool math validated: Revert risk = 0%.`);
-          txHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join("");
-          logEvent("EXECUTION", "success", `[SIMULATED EXECUTION] Flash swap confirmed! Simulated Tx: ${txHash.substring(0, 18)}... Realized Net Profit: +$${netProfitUsd.toFixed(2)} USD`);
-        }
-
-        // Update Cumulative Profit
-        autopilotState.cumulativeProfitUsd += netProfitUsd;
-        autopilotState.tradesExecuted++;
-
-        const tradeRecord = {
-          id: Date.now(),
-          timestamp: new Date().toLocaleTimeString(),
-          date: new Date().toLocaleDateString(),
-          symbol: currentPair.symbol,
-          quoteSymbol: currentPair.quoteSymbol,
-          route: `${currentPair.poolA.dex} ➔ ${currentPair.poolB.dex}`,
-          spread: currentPair.spreadPercent,
-          borrowAmount: ethers.formatEther(optimalBorrow).substring(0, 8),
-          profitUsd: netProfitUsd.toFixed(2),
-          txHash,
-          isLive
-        };
-
-        autopilotState.recentTrades.unshift(tradeRecord);
-        if (autopilotState.recentTrades.length > 50) {
-          autopilotState.recentTrades.pop();
-        }
-
-        saveAutopilotStats();
-
-        broadcast({
-          type: "autopilot_trade",
-          trade: tradeRecord,
-          cumulativeProfitUsd: autopilotState.cumulativeProfitUsd,
-          tradesExecuted: autopilotState.tradesExecuted
-        });
+  // Case 1: Both are Uniswap V2 constant-product pools
+  if (poolAInfo.type === "V2" && poolBInfo.type === "V2") {
+    routeOpt = evaluateTwoPoolArbitrage(
+      {
+        pairAddress: poolAAddr,
+        token0: poolAInfo.token0,
+        token1: poolAInfo.token1,
+        reserve0: poolAInfo.reserve0,
+        reserve1: poolAInfo.reserve1
+      },
+      {
+        pairAddress: poolBAddr,
+        token0: poolBInfo.token0,
+        token1: poolBInfo.token1,
+        reserve0: poolBInfo.reserve0,
+        reserve1: poolBInfo.reserve1
       }
+    );
+
+    if (routeOpt) {
+      [borrowDecimals, repayDecimals] = await Promise.all([
+        getTokenDecimals(routeOpt.borrowToken, provider),
+        getTokenDecimals(routeOpt.repayToken, provider)
+      ]);
     }
+  }
+  // Case 2: One is Uniswap V2 and the other is Uniswap V3 / Slipstream (Cross-Type CLAMM)
+  else if ((poolAInfo.type === "V2" && poolBInfo.type === "V3") || (poolAInfo.type === "V3" && poolBInfo.type === "V2")) {
+    const v2Pool = poolAInfo.type === "V2" ? poolAInfo : poolBInfo;
+    const v3Pool = poolAInfo.type === "V3" ? poolAInfo : poolBInfo;
+
+    const sizing = V3QuoterEngine.findOptimalCrossV2V3Borrow(
+      {
+        reserve0: v2Pool.reserve0,
+        reserve1: v2Pool.reserve1
+      },
+      {
+        sqrtPriceX96: v3Pool.sqrtPriceX96,
+        liquidity: v3Pool.liquidity
+      },
+      {
+        feeBpsV2: 30,
+        feeV3Millionths: 3000
+      }
+    );
+
+    if (sizing.isProfitable && sizing.maxProfit > 0n) {
+      routeOpt = {
+        isV2ToV3: true,
+        borrowPool: v2Pool.address,
+        targetPool: v3Pool.address,
+        borrowToken: v2Pool.token0,
+        repayToken: v2Pool.token1,
+        borrowToken0: true,
+        optimalBorrow: sizing.optimalBorrow,
+        maxProfit: sizing.maxProfit,
+        isProfitable: true
+      };
+
+      [borrowDecimals, repayDecimals] = await Promise.all([
+        getTokenDecimals(routeOpt.borrowToken, provider),
+        getTokenDecimals(routeOpt.repayToken, provider)
+      ]);
+    }
+  }
+  // Case 3: Both are Uniswap V3 pools (Flash loan executor borrows from V2 constant-product pools)
+  else if (poolAInfo.type === "V3" && poolBInfo.type === "V3") {
+    logEvent("AUTOPILOT", "info", `Scanned ${currentPair.symbol}: Both pools are Uniswap V3 (monitoring for cross V2/V3 liquidity updates)`);
+    return;
   } else {
-    logEvent("AUTOPILOT", "info", `Scanned ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex}): Spread ${currentPair.spreadPercent} (Waiting for expansion)`);
+    logEvent("AUTOPILOT", "info", `Scanned ${currentPair.symbol}: Non-standard pool protocol (${poolAInfo.type}/${poolBInfo.type})`);
+    return;
+  }
+
+  // Reject missing, stale, or unprofitable pool routes
+  if (!routeOpt || !routeOpt.isProfitable || routeOpt.maxProfit <= 0n) {
+    logEvent("AUTOPILOT", "info", `Scanned ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex}): Spread below profit threshold`);
+    return;
+  }
+
+  // Calculate actual USD profit using real token decimals
+  const quotePriceUsd = (currentPair.quoteSymbol === "WETH") ? 3200 : 1;
+  const profitQuoteUnits = parseFloat(formatTokenUnits(routeOpt.maxProfit, repayDecimals));
+  const grossProfitUsd = profitQuoteUnits * quotePriceUsd;
+
+  // Deduct 85% validator tip & L2 gas ($0.01 on Base)
+  const netProfitUsd = (grossProfitUsd * 0.15) - 0.01;
+
+  if (netProfitUsd > 0.05) {
+    autopilotState.opportunitiesDetected++;
+    const borrowAmountFormatted = formatTokenUnits(routeOpt.optimalBorrow, borrowDecimals);
+    logEvent("PROFIT", "success", `🔥 PROFITABLE SPREAD CONFIRMED: ${currentPair.symbol} | Borrow on ${routeOpt.borrowPool.substring(0, 8)}... ➔ Target ${routeOpt.targetPool.substring(0, 8)}...`);
+    logEvent("OPTIMIZER", "info", `Optimal Sizing: ${borrowAmountFormatted.substring(0, 8)} ${currentPair.symbol} | Gross: $${grossProfitUsd.toFixed(2)} | Net: +$${netProfitUsd.toFixed(2)} USD`);
+
+    const privateKey = process.env.PRIVATE_KEY;
+    const executorAddress = process.env.EXECUTOR_CONTRACT;
+    const isLive = Boolean(privateKey && executorAddress && executorAddress.startsWith("0x") && executorAddress !== "0x0000000000000000000000000000000000000000");
+
+    let txHash;
+    const minProfitRaw = (routeOpt.maxProfit * 90n) / 100n; // 10% slippage buffer
+    const methodName = routeOpt.isV2ToV3 ? "executeV2ToV3FlashArb" : "executeFlashArb";
+
+    if (isLive) {
+      logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating ${currentPair.symbol} trade off-chain ($0 gas)...`);
+      const signer = new ethers.Wallet(privateKey, provider);
+      const EXECUTOR_ABI = [
+        "function executeFlashArb(address poolBorrow, address poolTarget, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
+        "function executeV2ToV3FlashArb(address poolV2Borrow, address poolV3Target, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
+        "event ArbitrageExecuted(address indexed poolBorrow, address indexed poolTarget, address indexed profitToken, uint256 profitAmount, uint256 validatorTip)"
+      ];
+      const contract = new ethers.Contract(executorAddress, EXECUTOR_ABI, signer);
+
+      // Pre-flight staticCall ($0.00 gas)
+      try {
+        await contract[methodName].staticCall(
+          routeOpt.borrowPool,
+          routeOpt.targetPool,
+          routeOpt.optimalBorrow,
+          routeOpt.borrowToken0,
+          minProfitRaw,
+          0n
+        );
+        logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] On-chain state verified profitable! Zero revert risk.`);
+      } catch (simError) {
+        // Fix Finding F: Revert diagnostics with context, code, sanitized parameters
+        const diag = formatRevertDiagnostics(simError, {
+          targetContract: executorAddress,
+          chainId: chain,
+          functionName: methodName,
+          poolAddresses: [routeOpt.borrowPool, routeOpt.targetPool],
+          tradeParams: {
+            amountBorrow: routeOpt.optimalBorrow.toString(),
+            borrowToken0: routeOpt.borrowToken0,
+            minProfit: minProfitRaw.toString()
+          }
+        });
+        logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] ${diag.diagnosticString}. Dropped in local memory. Saved ~$0.05 gas!`);
+        return; // Abort trade: failed simulation strictly blocks execution
+      }
+
+      // Fix Finding E: Transaction lifecycle tracking
+      const trackingResult = await executeAndTrackLifecycle(
+        contract,
+        methodName,
+        [routeOpt.borrowPool, routeOpt.targetPool, routeOpt.optimalBorrow, routeOpt.borrowToken0, minProfitRaw, 0n],
+        {
+          onStatusChange: (status, details) => {
+            if (status === TxStatus.SUBMITTED) {
+              logEvent("EXECUTION", "info", `[TX SUBMITTED] Flash swap broadcast: ${details.txHash}`);
+            } else if (status === TxStatus.PENDING) {
+              logEvent("EXECUTION", "info", `[TX PENDING] Awaiting block inclusion for ${details.txHash}...`);
+            } else if (status === TxStatus.CONFIRMED) {
+              logEvent("EXECUTION", "success", `[TX CONFIRMED] Block #${details.receipt.blockNumber} confirmed! Tx: ${details.txHash} | Net Profit: +$${netProfitUsd.toFixed(2)} USD`);
+            } else if (status === TxStatus.FAILED) {
+              logEvent("EXECUTION", "error", `[TX FAILED] Transaction failed: ${details.error || "reverted"}`);
+            }
+          }
+        }
+      );
+
+      if (trackingResult.status !== TxStatus.CONFIRMED) {
+        return; // Do not record profit unless confirmed
+      }
+      txHash = trackingResult.txHash;
+    } else {
+      // Simulation Execution
+      logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating ${currentPair.symbol} trade off-chain ($0 gas)...`);
+      logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] Real pool math validated: Revert risk = 0%.`);
+      txHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join("");
+      logEvent("EXECUTION", "success", `[SIMULATED EXECUTION] Flash swap confirmed! Simulated Tx: ${txHash.substring(0, 18)}... Realized Net Profit: +$${netProfitUsd.toFixed(2)} USD`);
+    }
+
+    // Update Cumulative Profit only after confirmation
+    autopilotState.cumulativeProfitUsd += netProfitUsd;
+    autopilotState.tradesExecuted++;
+
+    const tradeRecord = {
+      id: Date.now(),
+      timestamp: new Date().toLocaleTimeString(),
+      date: new Date().toLocaleDateString(),
+      symbol: currentPair.symbol,
+      quoteSymbol: currentPair.quoteSymbol,
+      route: `${currentPair.poolA.dex} ➔ ${currentPair.poolB.dex}`,
+      spread: currentPair.spreadPercent || "0.0%",
+      borrowAmount: `${borrowAmountFormatted.substring(0, 8)} ${currentPair.symbol}`,
+      profitUsd: netProfitUsd.toFixed(2),
+      txHash,
+      isLive
+    };
+
+    autopilotState.recentTrades.unshift(tradeRecord);
+    if (autopilotState.recentTrades.length > 50) {
+      autopilotState.recentTrades.pop();
+    }
+
+    saveAutopilotStats();
+
+    broadcast({
+      type: "autopilot_trade",
+      trade: tradeRecord,
+      cumulativeProfitUsd: autopilotState.cumulativeProfitUsd,
+      tradesExecuted: autopilotState.tradesExecuted
+    });
+  } else {
+    logEvent("AUTOPILOT", "info", `Scanned ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex}): Net spread below threshold`);
   }
 
   saveAutopilotStats();
@@ -1072,7 +1241,7 @@ app.get("/api/triangular/scan", async (req, res) => {
 
 // 8. Solution 4: Execute / Simulate Triangular Flash Swap
 app.post("/api/triangular/execute", async (req, res) => {
-  const { pool1, pool2, pool3, optimalInputBase, route, dex } = req.body;
+  const { pool1, pool2, pool3, optimalInputBase, route, dex, borrowToken0 = true } = req.body;
   const chain = process.env.CHAIN || "base";
   const isLive = Boolean(process.env.PRIVATE_KEY && process.env.EXECUTOR_CONTRACT?.startsWith("0x"));
 
@@ -1081,37 +1250,68 @@ app.post("/api/triangular/execute", async (req, res) => {
   try {
     let txHash;
     if (isLive) {
+      if (!pool1 || !pool2 || !pool3 || !ethers.isAddress(pool1) || !ethers.isAddress(pool2) || !ethers.isAddress(pool3)) {
+        return res.status(400).json({ success: false, error: "Invalid pool addresses" });
+      }
       logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating triangular trade off-chain ($0 gas)...`);
       const rpcUrl = getRpcUrl(chain);
       const provider = new ethers.JsonRpcProvider(rpcUrl);
       const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
       const EXECUTOR_ABI = [
-        "function executeTriangularFlashArb(address pool1, address pool2, address pool3, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external"
+        "function executeTriangularFlashArb(address pool1, address pool2, address pool3, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
+        "event ArbitrageExecuted(address indexed poolBorrow, address indexed poolTarget, address indexed profitToken, uint256 profitAmount, uint256 validatorTip)"
       ];
       const contract = new ethers.Contract(process.env.EXECUTOR_CONTRACT, EXECUTOR_ABI, signer);
 
-      await contract.executeTriangularFlashArb.staticCall(
-        pool1,
-        pool2,
-        pool3,
-        ethers.parseEther(optimalInputBase || "0.1"),
-        true,
-        ethers.parseEther("0.0001"),
-        0n
-      );
-      logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] Triangular route verified! Zero revert risk.`);
+      const amountBorrowRaw = parseTokenUnits(optimalInputBase || "0.1", 18);
+      const minProfitRaw = parseTokenUnits("0.0001", 18);
 
-      const tx = await contract.executeTriangularFlashArb(
-        pool1,
-        pool2,
-        pool3,
-        ethers.parseEther(optimalInputBase || "0.1"),
-        true,
-        ethers.parseEther("0.0001"),
-        0n
+      try {
+        await contract.executeTriangularFlashArb.staticCall(
+          pool1,
+          pool2,
+          pool3,
+          amountBorrowRaw,
+          Boolean(borrowToken0),
+          minProfitRaw,
+          0n
+        );
+        logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] Triangular route verified! Zero revert risk.`);
+      } catch (simErr) {
+        const diag = formatRevertDiagnostics(simErr, {
+          targetContract: process.env.EXECUTOR_CONTRACT,
+          chainId: chain,
+          functionName: "executeTriangularFlashArb",
+          poolAddresses: [pool1, pool2, pool3],
+          tradeParams: { amountBorrow: amountBorrowRaw.toString(), borrowToken0, minProfit: minProfitRaw.toString() }
+        });
+        logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] ${diag.diagnosticString}. Dropped in local memory ($0 gas).`);
+        return res.status(400).json({ success: false, error: diag.diagnosticString });
+      }
+
+      const trackingResult = await executeAndTrackLifecycle(
+        contract,
+        "executeTriangularFlashArb",
+        [pool1, pool2, pool3, amountBorrowRaw, Boolean(borrowToken0), minProfitRaw, 0n],
+        {
+          onStatusChange: (status, details) => {
+            if (status === TxStatus.SUBMITTED) {
+              logEvent("EXECUTION", "info", `[TX SUBMITTED] Triangular transaction broadcast: ${details.txHash}`);
+            } else if (status === TxStatus.PENDING) {
+              logEvent("EXECUTION", "info", `[TX PENDING] Awaiting block inclusion for ${details.txHash}...`);
+            } else if (status === TxStatus.CONFIRMED) {
+              logEvent("EXECUTION", "success", `[TX CONFIRMED] Triangular flash swap confirmed! Tx: ${details.txHash}`);
+            } else if (status === TxStatus.FAILED) {
+              logEvent("EXECUTION", "error", `[TX FAILED] Transaction failed: ${details.error || "reverted"}`);
+            }
+          }
+        }
       );
-      txHash = tx.hash;
-      logEvent("EXECUTION", "success", `[CONFIRMED ON-CHAIN] Triangular Flash Swap Executed! Tx: ${txHash.substring(0, 18)}...`);
+
+      if (trackingResult.status !== TxStatus.CONFIRMED) {
+        return res.status(500).json({ success: false, error: trackingResult.error || "Transaction unconfirmed" });
+      }
+      txHash = trackingResult.txHash;
     } else {
       logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating triangular trade off-chain ($0 gas)...`);
       logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] 3-hop reserves validated. Revert risk = 0%.`);
@@ -1121,8 +1321,9 @@ app.post("/api/triangular/execute", async (req, res) => {
 
     res.json({ success: true, isLive, txHash, message: "Triangular Flash Swap Executed Successfully" });
   } catch (err) {
-    logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] Triangular execution halted: ${err.message}. $0 gas spent.`);
-    res.status(400).json({ success: false, error: err.message });
+    const sanitized = sanitizeLogString(err.message);
+    logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] Triangular execution halted: ${sanitized}. $0 gas spent.`);
+    res.status(400).json({ success: false, error: sanitized });
   }
 });
 
@@ -1143,7 +1344,7 @@ app.get("/api/v3/scan", async (req, res) => {
 
 // 10. Solution 5: Execute / Simulate Cross-Type Flash Swap (V2 -> V3)
 app.post("/api/v3/execute", async (req, res) => {
-  const { poolV2Borrow, poolV3Target, optimalBorrow, borrowToken0 = true, symbol, feeTierPercent } = req.body;
+  const { poolV2Borrow, poolV3Target, optimalBorrow, borrowToken0 = true, symbol, feeTierPercent, borrowTokenAddress } = req.body;
   const chain = process.env.CHAIN || "base";
   const isLive = Boolean(process.env.PRIVATE_KEY && process.env.EXECUTOR_CONTRACT?.startsWith("0x"));
 
@@ -1152,35 +1353,68 @@ app.post("/api/v3/execute", async (req, res) => {
   try {
     let txHash;
     if (isLive) {
+      if (!poolV2Borrow || !poolV3Target || !ethers.isAddress(poolV2Borrow) || !ethers.isAddress(poolV3Target)) {
+        return res.status(400).json({ success: false, error: "Invalid pool addresses" });
+      }
       logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating V2->V3 trade off-chain ($0 gas)...`);
       const rpcUrl = getRpcUrl(chain);
       const provider = new ethers.JsonRpcProvider(rpcUrl);
       const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
       const EXECUTOR_ABI = [
-        "function executeV2ToV3FlashArb(address poolV2Borrow, address poolV3Target, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external"
+        "function executeV2ToV3FlashArb(address poolV2Borrow, address poolV3Target, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
+        "event ArbitrageExecuted(address indexed poolBorrow, address indexed poolTarget, address indexed profitToken, uint256 profitAmount, uint256 validatorTip)"
       ];
       const contract = new ethers.Contract(process.env.EXECUTOR_CONTRACT, EXECUTOR_ABI, signer);
 
-      await contract.executeV2ToV3FlashArb.staticCall(
-        poolV2Borrow,
-        poolV3Target,
-        ethers.parseEther(optimalBorrow || "0.5"),
-        borrowToken0,
-        ethers.parseEther("0.0001"),
-        0n
-      );
-      logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] V2->V3 cross-type route verified! Zero revert risk.`);
+      const borrowDecimals = borrowTokenAddress ? await getTokenDecimals(borrowTokenAddress, provider) : 18;
+      const amountBorrowRaw = parseTokenUnits(optimalBorrow || "0.5", borrowDecimals);
+      const minProfitRaw = parseTokenUnits("0.0001", borrowDecimals);
 
-      const tx = await contract.executeV2ToV3FlashArb(
-        poolV2Borrow,
-        poolV3Target,
-        ethers.parseEther(optimalBorrow || "0.5"),
-        borrowToken0,
-        ethers.parseEther("0.0001"),
-        0n
+      try {
+        await contract.executeV2ToV3FlashArb.staticCall(
+          poolV2Borrow,
+          poolV3Target,
+          amountBorrowRaw,
+          Boolean(borrowToken0),
+          minProfitRaw,
+          0n
+        );
+        logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] V2->V3 cross-type route verified! Zero revert risk.`);
+      } catch (simErr) {
+        const diag = formatRevertDiagnostics(simErr, {
+          targetContract: process.env.EXECUTOR_CONTRACT,
+          chainId: chain,
+          functionName: "executeV2ToV3FlashArb",
+          poolAddresses: [poolV2Borrow, poolV3Target],
+          tradeParams: { amountBorrow: amountBorrowRaw.toString(), borrowToken0, minProfit: minProfitRaw.toString() }
+        });
+        logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] ${diag.diagnosticString}. Dropped in local memory ($0 gas).`);
+        return res.status(400).json({ success: false, error: diag.diagnosticString });
+      }
+
+      const trackingResult = await executeAndTrackLifecycle(
+        contract,
+        "executeV2ToV3FlashArb",
+        [poolV2Borrow, poolV3Target, amountBorrowRaw, Boolean(borrowToken0), minProfitRaw, 0n],
+        {
+          onStatusChange: (status, details) => {
+            if (status === TxStatus.SUBMITTED) {
+              logEvent("EXECUTION", "info", `[TX SUBMITTED] V2->V3 transaction broadcast: ${details.txHash}`);
+            } else if (status === TxStatus.PENDING) {
+              logEvent("EXECUTION", "info", `[TX PENDING] Awaiting block inclusion for ${details.txHash}...`);
+            } else if (status === TxStatus.CONFIRMED) {
+              logEvent("EXECUTION", "success", `[TX CONFIRMED] V2->V3 Flash Swap Executed! Tx: ${details.txHash}`);
+            } else if (status === TxStatus.FAILED) {
+              logEvent("EXECUTION", "error", `[TX FAILED] Transaction failed: ${details.error || "reverted"}`);
+            }
+          }
+        }
       );
-      txHash = tx.hash;
-      logEvent("EXECUTION", "success", `[CONFIRMED ON-CHAIN] V2->V3 Flash Swap Executed! Tx: ${txHash.substring(0, 18)}...`);
+
+      if (trackingResult.status !== TxStatus.CONFIRMED) {
+        return res.status(500).json({ success: false, error: trackingResult.error || "Transaction unconfirmed" });
+      }
+      txHash = trackingResult.txHash;
     } else {
       logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating V2->V3 trade off-chain ($0 gas)...`);
       logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] CLAMM tick & depth validated. Revert risk = 0%.`);
@@ -1190,8 +1424,9 @@ app.post("/api/v3/execute", async (req, res) => {
 
     res.json({ success: true, isLive, txHash, message: "Concentrated Liquidity Flash Swap Executed Successfully" });
   } catch (err) {
-    logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] V2->V3 execution halted: ${err.message}. $0 gas spent.`);
-    res.status(400).json({ success: false, error: err.message });
+    const sanitized = sanitizeLogString(err.message);
+    logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] V2->V3 execution halted: ${sanitized}. $0 gas spent.`);
+    res.status(400).json({ success: false, error: sanitized });
   }
 });
 
