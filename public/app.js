@@ -59,9 +59,38 @@ function initNavigation() {
   if (discoverNavBtn) {
     discoverNavBtn.addEventListener("click", () => switchTab("tab-discovery"));
   }
+
+  // Mobile Drawer Toggle & Overlay
+  const mobileMenuBtn = document.getElementById("btn-mobile-menu");
+  const mobileOverlay = document.getElementById("mobile-overlay");
+  const sidebar = document.querySelector(".sidebar");
+
+  function toggleMobileMenu(open) {
+    if (!sidebar || !mobileOverlay) return;
+    const isOpen = open !== undefined ? open : !sidebar.classList.contains("mobile-open");
+    sidebar.classList.toggle("mobile-open", isOpen);
+    mobileOverlay.classList.toggle("active", isOpen);
+    document.body.style.overflow = isOpen ? "hidden" : "";
+  }
+
+  if (mobileMenuBtn) {
+    mobileMenuBtn.addEventListener("click", () => toggleMobileMenu());
+  }
+  if (mobileOverlay) {
+    mobileOverlay.addEventListener("click", () => toggleMobileMenu(false));
+  }
 }
 
 function switchTab(tabId) {
+  // Close mobile drawer if active
+  const sidebar = document.querySelector(".sidebar");
+  const mobileOverlay = document.getElementById("mobile-overlay");
+  if (sidebar && sidebar.classList.contains("mobile-open")) {
+    sidebar.classList.remove("mobile-open");
+    if (mobileOverlay) mobileOverlay.classList.remove("active");
+    document.body.style.overflow = "";
+  }
+
   // Update sidebar active classes
   document.querySelectorAll(".nav-item").forEach(item => {
     if (item.getAttribute("data-tab") === tabId) {
@@ -503,25 +532,31 @@ function updateBotState(running, stats) {
   const btn = document.getElementById("btn-toggle-bot");
 
   if (running) {
-    statusText.textContent = "Scanning...";
-    statusText.className = "metric-value text-success";
-    subtext.textContent = "Autonomous block polling active";
-    radar.className = "pulse-radar active";
-    btnText.textContent = "Stop Auto-Scanner";
-    btn.className = "btn btn-secondary";
+    if (statusText) {
+      statusText.textContent = "Scanning...";
+      statusText.className = "metric-value text-success";
+    }
+    if (subtext) subtext.textContent = "Autonomous block polling active";
+    if (radar) radar.className = "pulse-radar active";
+    if (btnText) btnText.textContent = "Stop Auto-Scanner";
+    if (btn) btn.className = "btn btn-secondary";
   } else {
-    statusText.textContent = "Idle";
-    statusText.className = "metric-value";
-    subtext.textContent = "Standing by for operator trigger";
-    radar.className = "pulse-radar";
-    btnText.textContent = "Start Auto-Scanner";
-    btn.className = "btn btn-primary";
+    if (statusText) {
+      statusText.textContent = "Idle";
+      statusText.className = "metric-value";
+    }
+    if (subtext) subtext.textContent = "Standing by for operator trigger";
+    if (radar) radar.className = "pulse-radar";
+    if (btnText) btnText.textContent = "Start Auto-Scanner";
+    if (btn) btn.className = "btn btn-primary";
   }
 
   if (stats) {
-    document.getElementById("opp-count-display").textContent = stats.opportunitiesFound || 0;
-    if (stats.highestSpread) {
-      document.getElementById("peak-spread-display").textContent = stats.highestSpread + "%";
+    const oppEl = document.getElementById("opp-count-display");
+    if (oppEl) oppEl.textContent = stats.opportunitiesFound || 0;
+    const peakEl = document.getElementById("peak-spread-display");
+    if (peakEl && stats.highestSpread) {
+      peakEl.textContent = stats.highestSpread + "%";
     }
   }
 }
@@ -690,9 +725,12 @@ async function fetchPairs() {
     renderPairsTable(pairs);
 
     // Update counts
-    document.getElementById("monitored-count-display").textContent = pairs.length;
-    document.getElementById("sidebar-pair-count").textContent = pairs.length;
-    document.getElementById("disc-pairs-subtitle").textContent = `${pairs.length} multi-DEX pools ready for flash swap monitoring`;
+    const countDisplay = document.getElementById("monitored-count-display");
+    if (countDisplay) countDisplay.textContent = pairs.length;
+    const sideCount = document.getElementById("sidebar-pair-count");
+    if (sideCount) sideCount.textContent = pairs.length;
+    const subTitle = document.getElementById("disc-pairs-subtitle");
+    if (subTitle) subTitle.textContent = `${pairs.length} multi-DEX pools ready for flash swap monitoring`;
   } catch (err) {
     console.error("Failed to fetch pairs:", err);
   }
