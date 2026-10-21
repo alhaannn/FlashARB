@@ -271,6 +271,65 @@ function initAutopilot() {
       }
     });
   }
+
+  // Delete Autopilot History Modal & Handler
+  const btnClearLogs = document.getElementById("btn-clear-autopilot-logs");
+  const modalClearLogs = document.getElementById("modal-clear-logs");
+  const btnCloseModal = document.getElementById("btn-close-modal-logs");
+  const btnCancelClear = document.getElementById("btn-cancel-clear-log");
+  const btnConfirmClear = document.getElementById("btn-confirm-clear-log");
+  const btnConfirmClearText = document.getElementById("btn-confirm-clear-log-text");
+
+  function openClearLogsModal() {
+    if (modalClearLogs) {
+      modalClearLogs.style.display = "flex";
+      document.body.style.overflow = "hidden";
+    }
+  }
+
+  function closeClearLogsModal() {
+    if (modalClearLogs) {
+      modalClearLogs.style.display = "none";
+      document.body.style.overflow = "";
+    }
+  }
+
+  if (btnClearLogs) {
+    btnClearLogs.addEventListener("click", openClearLogsModal);
+  }
+  if (btnCloseModal) {
+    btnCloseModal.addEventListener("click", closeClearLogsModal);
+  }
+  if (btnCancelClear) {
+    btnCancelClear.addEventListener("click", closeClearLogsModal);
+  }
+  if (modalClearLogs) {
+    modalClearLogs.addEventListener("click", (e) => {
+      if (e.target === modalClearLogs) closeClearLogsModal();
+    });
+  }
+
+  if (btnConfirmClear) {
+    btnConfirmClear.addEventListener("click", async () => {
+      try {
+        btnConfirmClear.disabled = true;
+        if (btnConfirmClearText) btnConfirmClearText.textContent = "Wiping Log File...";
+        const res = await fetch("/api/autopilot/logs/clear", { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+          showToast("Autopilot history log cleared from server (Disk reclaimed)", "success");
+        } else {
+          showToast(data.error || "Failed to clear log", "error");
+        }
+      } catch (err) {
+        showToast("Error clearing logs: " + err.message, "error");
+      } finally {
+        btnConfirmClear.disabled = false;
+        if (btnConfirmClearText) btnConfirmClearText.textContent = "Confirm & Wipe Server Log";
+        closeClearLogsModal();
+      }
+    });
+  }
 }
 
 async function startAutopilot() {

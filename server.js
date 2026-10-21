@@ -1078,6 +1078,24 @@ app.get("/api/autopilot/logs/download", (req, res) => {
   }
 });
 
+// Clear Autopilot Log File Route (Reclaim AWS Server Disk Space)
+app.post("/api/autopilot/logs/clear", (req, res) => {
+  try {
+    const timestamp = new Date().toISOString();
+    const headerLine = `[${timestamp}] [SYSTEM] [INFO] Autopilot history log cleared by operator. Disk space reclaimed.\n`;
+    fs.writeFile(AUTOPILOT_LOG_FILE, headerLine, "utf8", (err) => {
+      if (err) {
+        console.error("Failed to clear autopilot log file:", err.message);
+        return res.status(500).json({ success: false, error: "Failed to clear log file: " + err.message });
+      }
+      logEvent("SYSTEM", "info", "Autopilot history log cleared by operator. Disk space reclaimed.");
+      res.json({ success: true, message: "Autopilot history log cleared and disk space reclaimed." });
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Clear Stats Route
 app.post("/api/autopilot/reset-stats", (req, res) => {
   autopilotState.cumulativeProfitUsd = 0;

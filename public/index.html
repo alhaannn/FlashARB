@@ -250,10 +250,13 @@
               <h2 class="card-title">Autopilot Realized Trades History</h2>
               <span class="card-sub">Continuous ledger of all automated flash swap arbitrage executions</span>
             </div>
-            <div class="trade-actions" style="display: flex; gap: 8px;">
+            <div class="trade-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
               <a href="/api/autopilot/logs/download" class="btn btn-outline btn-sm" id="btn-download-logs" download>
-                <span>📥 Download Complete Log (.log)</span>
+                <span>📥 Download Log (.log)</span>
               </a>
+              <button class="btn btn-outline btn-sm btn-danger-glow" id="btn-clear-autopilot-logs">
+                <span>🗑️ Delete Autopilot History</span>
+              </button>
               <button class="btn btn-ghost btn-sm" id="btn-reset-stats">Reset Profit Stats</button>
             </div>
           </div>
@@ -868,6 +871,41 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <!-- Confirmation Warning Modal: Delete Autopilot History -->
+  <div class="modal-backdrop" id="modal-clear-logs" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-icon-wrap warning">
+          <span>⚠️</span>
+        </div>
+        <div style="flex: 1;">
+          <h3 class="modal-title">Delete Autopilot History?</h3>
+          <p class="modal-subtitle">Permanent server disk cleanup</p>
+        </div>
+        <button class="modal-close" id="btn-close-modal-logs" aria-label="Close dialog">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-alert-box">
+          <div style="font-weight: 700; margin-bottom: 4px; color: #f87171;">Permanent Server Action</div>
+          <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
+            This will permanently wipe <code>logs/autopilot_history.log</code> from your AWS server to prevent disk saturation and PM2 process freezes.
+          </p>
+        </div>
+        <ul class="modal-list">
+          <li>Historical cycles recorded up to this moment will no longer be downloadable.</li>
+          <li>Live autopilot block scanning and active WebSocket stream continue without interruption.</li>
+          <li><em>Tip: Click "Download Log" beforehand if you wish to archive this run.</em></li>
+        </ul>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="btn-cancel-clear-log">Cancel</button>
+        <button class="btn btn-danger" id="btn-confirm-clear-log">
+          <span id="btn-confirm-clear-log-text">Confirm &amp; Wipe Server Log</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- Notification Toast Container -->
