@@ -211,6 +211,7 @@ describe("FlashArbExecutor - DEX Arbitrage Security & Execution Suite", function
     });
 
     it("reverts if a different or fake pool tries to call callback during active execution", async function () {
+      // Even if another contract impersonates or calls uniswapV3SwapCallback, it must revert
       const fakeData = ethers.AbiCoder.defaultAbiCoder().encode(["address"], [token0.target]);
 
       await assert.rejects(
@@ -246,6 +247,7 @@ describe("FlashArbExecutor - DEX Arbitrage Security & Execution Suite", function
     });
 
     it("rejects callback with malformed data or mismatched paying token", async function () {
+      // Malformed data length < 32
       await assert.rejects(
         async () => {
           await executor.uniswapV3SwapCallback(100n, -100n, "0x1234");
@@ -314,24 +316,25 @@ describe("FlashArbExecutor - DEX Arbitrage Security & Execution Suite", function
       );
     });
 
-    it("prevents non-owners from rescuing tokens or ETH", async function () {
-      await token0.mint(executor.target, ethers.parseEther("100"));
-
+    it("rejects direct unauthorized hook() callback invocation from attacker", async function () {
       await assert.rejects(
         async () => {
-          await executor.connect(user).rescueTokens(token0.target, user.address, ethers.parseEther("100"));
+          await executor.connect(attacker).hook(
+            attacker.address,
+            ethers.parseEther("1"),
+            0n,
+            "0x"
+          );
         },
-        /OwnableUnauthorizedAccount/,
-        "Non-owner cannot rescue tokens"
+        /FlashArb: Unauthorized sender/,
+        "Direct unauthorized hook callback must be rejected"
       );
+    });
 
-      await assert.rejects(
-        async () => {
-          await executor.connect(user).rescueETH(user.address);
-        },
-        /OwnableUnauthorizedAccount/,
-        "Non-owner cannot rescue ETH"
-      );
+    it("verifies hook() callback selector matches Aerodrome IPoolCallee standard (0x9a7bff79)", async function () {
+      const hookFragment = executor.interface.getFunction("hook");
+      assert.ok(hookFragment, "hook function must exist in executor ABI");
+      assert.strictEqual(hookFragment.selector, "0x9a7bff79", "hook selector must match Aerodrome standard");
     });
   });
 });

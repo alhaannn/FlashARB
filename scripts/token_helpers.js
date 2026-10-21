@@ -164,7 +164,8 @@ export async function getPoolProtocolInfo(poolAddress, provider) {
           token0: cached.token0,
           token1: cached.token1,
           reserve0: res[0],
-          reserve1: res[1]
+          reserve1: res[1],
+          feeBps: cached.feeBps || 30
         };
       } catch {
         return { type: "UNKNOWN" };
@@ -181,7 +182,8 @@ export async function getPoolProtocolInfo(poolAddress, provider) {
           token1: cached.token1,
           sqrtPriceX96: slot[0],
           tick: Number(slot[1]),
-          liquidity: liq
+          liquidity: liq,
+          feeMillionths: cached.feeMillionths || 3000
         };
       } catch {
         return { type: "UNKNOWN" };
@@ -206,15 +208,38 @@ export async function getPoolProtocolInfo(poolAddress, provider) {
       v2.token0(),
       v2.token1()
     ]);
+
+    let feeBps = 30;
+    try {
+      const aero = new ethers.Contract(
+        checksummed,
+        ["function factory() view returns (address)", "function stable() view returns (bool)"],
+        provider
+      );
+      const [factory, stable] = await Promise.all([aero.factory(), aero.stable()]);
+      const f = new ethers.Contract(
+        factory,
+        ["function getFee(address, bool) view returns (uint256)"],
+        provider
+      );
+      const queriedFee = await f.getFee(checksummed, stable);
+      if (queriedFee > 0n && queriedFee <= 1000n) {
+        feeBps = Number(queriedFee);
+      }
+    } catch {
+      feeBps = 30;
+    }
+
     const info = {
       type: "V2",
       address: checksummed,
       token0: ethers.getAddress(t0),
       token1: ethers.getAddress(t1),
       reserve0: res[0],
-      reserve1: res[1]
+      reserve1: res[1],
+      feeBps
     };
-    poolProtocolCache.set(cacheKey, { type: "V2", token0: info.token0, token1: info.token1 });
+    poolProtocolCache.set(cacheKey, { type: "V2", token0: info.token0, token1: info.token1, feeBps });
     return info;
   } catch {
     // getReserves failed, now probe for Uniswap V3 / Aerodrome Slipstream interface (slot0)
@@ -234,6 +259,16 @@ export async function getPoolProtocolInfo(poolAddress, provider) {
         v3.token1(),
         v3.liquidity().catch(() => 0n)
       ]);
+
+      let feeMillionths = 3000;
+      try {
+        const v3Fee = new ethers.Contract(checksummed, ["function fee() view returns (uint24)"], provider);
+        const f = await v3Fee.fee();
+        if (f > 0n) feeMillionths = Number(f);
+      } catch {
+        feeMillionths = 3000;
+      }
+
       const info = {
         type: "V3",
         address: checksummed,
@@ -241,9 +276,10 @@ export async function getPoolProtocolInfo(poolAddress, provider) {
         token1: ethers.getAddress(t1),
         sqrtPriceX96: slot[0],
         tick: Number(slot[1]),
-        liquidity: liq
+        liquidity: liq,
+        feeMillionths
       };
-      poolProtocolCache.set(cacheKey, { type: "V3", token0: info.token0, token1: info.token1 });
+      poolProtocolCache.set(cacheKey, { type: "V3", token0: info.token0, token1: info.token1, feeMillionths });
       return info;
     } catch {
       const info = { type: "UNKNOWN", address: checksummed };

@@ -6,14 +6,16 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./interfaces/IUniswapV2Pair.sol";
 import "./interfaces/IUniswapV2Callee.sol";
+import "./interfaces/IPoolCallee.sol";
+import "./interfaces/IAerodromePool.sol";
 import "./interfaces/IUniswapV3Pool.sol";
 import "./interfaces/IWETH.sol";
 import "./libraries/UniswapV2Library.sol";
 
 /// @title FlashArbExecutor - Production-Grade DEX Arbitrage Executor
 /// @notice Executes uncollateralized flash swap arbitrage between two Uniswap V2 compatible DEX pools
-/// @dev Implements Uniswap V2 Callee, Uniswap V3 Callback, and Flashbots block.coinbase tipping
-contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
+/// @dev Implements Uniswap V2 Callee, Aerodrome Pool Callee, Uniswap V3 Callback, and Flashbots block.coinbase tipping
+contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallback, Ownable {
     using SafeERC20 for IERC20;
 
     address public immutable WETH;
@@ -173,6 +175,20 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
         uint256 /* amount1 */,
         bytes calldata data
     ) external override {
+        _handleFlashCallback(sender, data);
+    }
+
+    /// @notice Callback invoked by Aerodrome / Velodrome pool during flash swap
+    function hook(
+        address sender,
+        uint256 /* amount0 */,
+        uint256 /* amount1 */,
+        bytes calldata data
+    ) external override {
+        _handleFlashCallback(sender, data);
+    }
+
+    function _handleFlashCallback(address sender, bytes calldata data) internal {
         require(sender == address(this), "FlashArb: Unauthorized sender");
         require(_activeV2BorrowPool != address(0) && msg.sender == _activeV2BorrowPool, "FlashArb: Unauthorized V2 caller");
 
@@ -335,11 +351,30 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
         repay = borrowToken0 ? t1 : t0;
     }
 
+    function _getFeeBps(address pool) internal view returns (uint256) {
+        try IAerodromePool(pool).factory() returns (address factory) {
+            try IAerodromePool(pool).stable() returns (bool stable) {
+                try IAerodromeFactory(factory).getFee(pool, stable) returns (uint256 fee) {
+                    if (fee > 0 && fee <= 1000) {
+                        return fee;
+                    }
+                } catch {}
+            } catch {}
+        } catch {}
+        return 30; // standard 30 bps (0.3%) for Uniswap V2
+    }
+
     function _getRepaymentAmount(address pool, uint256 amountBorrow, bool borrowToken0) internal view returns (uint256) {
         (uint112 r0, uint112 r1, ) = IUniswapV2Pair(pool).getReserves();
-        return borrowToken0
-            ? UniswapV2Library.getAmountIn(amountBorrow, r1, r0)
-            : UniswapV2Library.getAmountIn(amountBorrow, r0, r1);
+        uint256 feeBps = _getFeeBps(pool);
+        (uint256 reserveIn, uint256 reserveOut) = borrowToken0 ? (uint256(r1), uint256(r0)) : (uint256(r0), uint256(r1));
+
+        require(amountBorrow > 0, "FlashArb: Zero borrow amount");
+        require(reserveOut > amountBorrow, "FlashArb: Insufficient liquidity for borrow");
+
+        uint256 numerator = reserveIn * amountBorrow * 10000;
+        uint256 denominator = (reserveOut - amountBorrow) * (10000 - feeBps);
+        return (numerator / denominator) + 1;
     }
 
     function _executeTargetSwap(address poolTarget, address borrowedToken, uint256 amountBorrow) internal returns (uint256 amountOut) {
@@ -347,14 +382,24 @@ contract FlashArbExecutor is IUniswapV2Callee, IUniswapV3SwapCallback, Ownable {
 
         (uint112 r0, uint112 r1, ) = IUniswapV2Pair(poolTarget).getReserves();
         address targetToken0 = IUniswapV2Pair(poolTarget).token0();
+        uint256 feeBps = _getFeeBps(poolTarget);
 
         if (targetToken0 == borrowedToken) {
-            amountOut = UniswapV2Library.getAmountOut(amountBorrow, r0, r1);
+            amountOut = _getAmountOut(amountBorrow, uint256(r0), uint256(r1), feeBps);
             IUniswapV2Pair(poolTarget).swap(0, amountOut, address(this), "");
         } else {
-            amountOut = UniswapV2Library.getAmountOut(amountBorrow, r1, r0);
+            amountOut = _getAmountOut(amountBorrow, uint256(r1), uint256(r0), feeBps);
             IUniswapV2Pair(poolTarget).swap(amountOut, 0, address(this), "");
         }
+    }
+
+    function _getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut, uint256 feeBps) internal pure returns (uint256) {
+        require(amountIn > 0, "FlashArb: Insufficient input amount");
+        require(reserveIn > 0 && reserveOut > 0, "FlashArb: Insufficient liquidity");
+        uint256 amountInWithFee = amountIn * (10000 - feeBps);
+        uint256 numerator = amountInWithFee * reserveOut;
+        uint256 denominator = (reserveIn * 10000) + amountInWithFee;
+        return numerator / denominator;
     }
 
     function _handleValidatorTip(uint256 tip, address profitToken, uint256 profit) internal returns (uint256) {

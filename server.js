@@ -704,7 +704,10 @@ async function runAutopilotMonitoringCycle() {
     const v2Pool = poolAInfo.type === "V2" ? poolAInfo : poolBInfo;
     const v3Pool = poolAInfo.type === "V3" ? poolAInfo : poolBInfo;
 
-    const sizing = V3QuoterEngine.findOptimalCrossV2V3Borrow(
+    const feeBpsV2 = v2Pool.feeBps || 30;
+    const feeV3Millionths = v3Pool.feeMillionths || 3000;
+
+    const sizing = V3QuoterEngine.findOptimalCrossV2V3BorrowBest(
       {
         reserve0: v2Pool.reserve0,
         reserve1: v2Pool.reserve1
@@ -714,19 +717,20 @@ async function runAutopilotMonitoringCycle() {
         liquidity: v3Pool.liquidity
       },
       {
-        feeBpsV2: 30,
-        feeV3Millionths: 3000
+        feeBpsV2,
+        feeV3Millionths
       }
     );
 
     if (sizing.isProfitable && sizing.maxProfit > 0n) {
+      const borrowToken0 = sizing.borrowToken0;
       routeOpt = {
         isV2ToV3: true,
         borrowPool: v2Pool.address,
         targetPool: v3Pool.address,
-        borrowToken: v2Pool.token0,
-        repayToken: v2Pool.token1,
-        borrowToken0: true,
+        borrowToken: borrowToken0 ? v2Pool.token0 : v2Pool.token1,
+        repayToken: borrowToken0 ? v2Pool.token1 : v2Pool.token0,
+        borrowToken0,
         optimalBorrow: sizing.optimalBorrow,
         maxProfit: sizing.maxProfit,
         isProfitable: true
@@ -754,7 +758,8 @@ async function runAutopilotMonitoringCycle() {
   }
 
   // Calculate actual USD profit using real token decimals
-  const quotePriceUsd = (currentPair.quoteSymbol === "WETH") ? 3200 : 1;
+  const isRepayWeth = (routeOpt.repayToken && routeOpt.repayToken.toLowerCase() === "0x4200000000000000000000000000000000000006".toLowerCase());
+  const quotePriceUsd = isRepayWeth ? 3200 : 1;
   const profitQuoteUnits = parseFloat(formatTokenUnits(routeOpt.maxProfit, repayDecimals));
   const grossProfitUsd = profitQuoteUnits * quotePriceUsd;
 

@@ -137,35 +137,39 @@ export class V3QuoterEngine {
     const {
       maxBorrowEther = "10.0",
       feeBpsV2 = 30,
-      feeV3Millionths = 3000
+      feeV3Millionths = 3000,
+      borrowToken0 = true
     } = options;
+
+    const feeBps = BigInt(feeBpsV2 || 30);
+    const r0_A = BigInt(v2Pool.reserve0 || v2Pool.r0 || ethers.parseEther("100"));
+    const r1_A = BigInt(v2Pool.reserve1 || v2Pool.r1 || ethers.parseEther("250000"));
+    const [reserveOut, reserveIn] = borrowToken0 ? [r0_A, r1_A] : [r1_A, r0_A];
 
     let low = ethers.parseEther("0.001");
     let high = ethers.parseEther(maxBorrowEther);
+    if (high >= reserveOut / 2n) {
+      high = reserveOut / 2n;
+    }
+    if (high <= low) return { optimalBorrow: 0n, maxProfit: 0n, isProfitable: false, borrowToken0 };
 
     // Evaluate single trade function
     const evaluateProfit = (borrowAmount) => {
-      if (borrowAmount <= 0n) return -1n;
+      if (borrowAmount <= 0n || borrowAmount >= reserveOut) return -1n;
 
-      // 1. Borrow from V2: calculate required repayment
-      const amountInWithFee = borrowAmount * 997n;
-      const r0_A = BigInt(v2Pool.reserve0 || v2Pool.r0 || ethers.parseEther("100"));
-      const r1_A = BigInt(v2Pool.reserve1 || v2Pool.r1 || ethers.parseEther("250000"));
-      if (borrowAmount >= r0_A) return -1n;
-
-      // required repayment of Token1 to borrow Token0
-      const numeratorA = r1_A * borrowAmount * 1000n;
-      const denominatorA = (r0_A - borrowAmount) * 997n;
+      // 1. Borrow from V2: calculate required repayment with real pool fee
+      const numeratorA = reserveIn * borrowAmount * 10000n;
+      const denominatorA = (reserveOut - borrowAmount) * (10000n - feeBps);
       if (denominatorA <= 0n) return -1n;
       const requiredRepay = (numeratorA / denominatorA) + 1n;
 
-      // 2. Sell on V3: calculate output of Token1
+      // 2. Sell on V3: calculate output of other token
       const v3Sim = V3QuoterEngine.simulateV3SwapStep(
         borrowAmount,
         v3Pool.sqrtPriceX96,
         v3Pool.liquidity,
         feeV3Millionths,
-        true
+        borrowToken0
       );
 
       if (v3Sim.amountOut <= requiredRepay) return -1n;
@@ -196,8 +200,21 @@ export class V3QuoterEngine {
     return {
       optimalBorrow: isProfitable ? optimalBorrow : 0n,
       maxProfit: isProfitable ? maxProfit : 0n,
-      isProfitable
+      isProfitable,
+      borrowToken0
     };
+  }
+
+  /**
+   * Evaluates both borrow directions (borrow token0 vs borrow token1) and selects optimal
+   */
+  static findOptimalCrossV2V3BorrowBest(v2Pool, v3Pool, options = {}) {
+    const opt0 = V3QuoterEngine.findOptimalCrossV2V3Borrow(v2Pool, v3Pool, { ...options, borrowToken0: true });
+    const opt1 = V3QuoterEngine.findOptimalCrossV2V3Borrow(v2Pool, v3Pool, { ...options, borrowToken0: false });
+    if (opt1.isProfitable && opt1.maxProfit > opt0.maxProfit) {
+      return opt1;
+    }
+    return opt0;
   }
 }
 
