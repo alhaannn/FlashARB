@@ -708,20 +708,26 @@ async function runAutopilotMonitoringCycle() {
 
   // Case 1: Both are Uniswap V2 constant-product pools
   if (poolAInfo.type === "V2" && poolBInfo.type === "V2") {
+    const feeA = poolAInfo.feeBps || 30;
+    const feeB = poolBInfo.feeBps || 30;
+    const combinedFeePct = ((feeA + feeB) / 100).toFixed(2);
+
     routeOpt = evaluateTwoPoolArbitrage(
       {
         pairAddress: poolAAddr,
         token0: poolAInfo.token0,
         token1: poolAInfo.token1,
         reserve0: poolAInfo.reserve0,
-        reserve1: poolAInfo.reserve1
+        reserve1: poolAInfo.reserve1,
+        feeBps: feeA
       },
       {
         pairAddress: poolBAddr,
         token0: poolBInfo.token0,
         token1: poolBInfo.token1,
         reserve0: poolBInfo.reserve0,
-        reserve1: poolBInfo.reserve1
+        reserve1: poolBInfo.reserve1,
+        feeBps: feeB
       }
     );
 
@@ -730,6 +736,11 @@ async function runAutopilotMonitoringCycle() {
         getTokenDecimals(routeOpt.borrowToken, provider),
         getTokenDecimals(routeOpt.repayToken, provider)
       ]);
+    } else {
+      const priceA = Number(poolAInfo.reserve1) / Number(poolAInfo.reserve0);
+      const priceB = Number(poolBInfo.reserve1) / Number(poolBInfo.reserve0);
+      const rawSpreadPct = (Math.abs(priceA - priceB) / Math.min(priceA, priceB)) * 100;
+      logEvent("AUTOPILOT", "info", `[V2-to-V2] ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex}): Raw spread ${rawSpreadPct.toFixed(2)}% is within combined pool fees (${combinedFeePct}%: ${(feeA/100).toFixed(2)}% + ${(feeB/100).toFixed(2)}%) & slippage`);
     }
   }
   // Case 2: One is Uniswap V2 and the other is Uniswap V3 / Slipstream (Cross-Type CLAMM)
@@ -773,6 +784,9 @@ async function runAutopilotMonitoringCycle() {
         getTokenDecimals(routeOpt.borrowToken, provider),
         getTokenDecimals(routeOpt.repayToken, provider)
       ]);
+    } else {
+      const totalFeePercent = ((feeBpsV2 / 100) + (feeV3Millionths / 10000)).toFixed(2);
+      logEvent("AUTOPILOT", "info", `[Cross V2-V3] ${currentPair.symbol}: Spread within combined pool fees (${totalFeePercent}%) & slippage threshold`);
     }
   }
   // Case 3: Both are Uniswap V3 / Slipstream / Pancake V3 pools (Solution 6: V3-to-V3 Concentrated Liquidity Arbitrage)
