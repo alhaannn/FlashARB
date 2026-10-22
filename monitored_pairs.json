@@ -1,263 +1,339 @@
 [
   {
-    "symbol": "cbZEC",
-    "tokenAddress": "0xb2000000000000000000008501b13360000cb2ec",
-    "quoteSymbol": "USDC",
-    "spreadPercent": "1.07%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": false,
-    "poolA": {
-      "dex": "aerodrome",
-      "pairAddress": "0x0Fc47C17AF86078d809358db1b4db2DeBC988566",
-      "priceUsd": "1209.0082",
-      "liquidityUsd": 291272.28
-    },
-    "poolB": {
-      "dex": "uniswap",
-      "pairAddress": "0x824eD9D2f9ca65636ebA5A89D3BC3c9FE7cc3F9a",
-      "priceUsd": "1196.15",
-      "liquidityUsd": 41332.81
-    }
-  },
-  {
-    "symbol": "AERO",
-    "tokenAddress": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
-    "quoteSymbol": "USDC",
-    "spreadPercent": "0.83%",
-    "strategy": "Memecoin Liquid Spread",
-    "isSmallPond": false,
-    "poolA": {
-      "dex": "aerodrome",
-      "pairAddress": "0xBE00fF35AF70E8415D0eB605a286D8A45466A4c1",
-      "priceUsd": "0.8514",
-      "liquidityUsd": 1223617.92
-    },
-    "poolB": {
-      "dex": "uniswap",
-      "pairAddress": "0xE5B5f522E98B5a2baAe212d4dA66b865B781DB97",
-      "priceUsd": "0.8585",
-      "liquidityUsd": 212423.45
-    }
-  },
-  {
-    "symbol": "cbBTC",
-    "tokenAddress": "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf",
-    "quoteSymbol": "WETH",
-    "spreadPercent": "0.53%",
-    "strategy": "Memecoin Liquid Spread",
-    "isSmallPond": false,
-    "poolA": {
-      "dex": "aerodrome",
-      "pairAddress": "0x7C7420DD105E2779316423Ba3E973f434315EFA9",
-      "priceUsd": "82361.62",
-      "liquidityUsd": 3138581.94
-    },
-    "poolB": {
-      "dex": "pancakeswap",
-      "pairAddress": "0xd974D59e30054cf1aBedeD0C9947B0D8Baf90029",
-      "priceUsd": "82800.42",
-      "liquidityUsd": 417259.36
-    }
-  },
-  {
-    "symbol": "TOSHI",
-    "tokenAddress": "0xac1bd2486aaf3b5c0fc3fd868558b082a531b2b4",
-    "quoteSymbol": "WETH",
-    "spreadPercent": "0.52%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": false,
-    "poolA": {
-      "dex": "uniswap",
-      "pairAddress": "0x4b0Aaf3EBb163dd45F663b38b6d93f6093EBC2d3",
-      "priceUsd": "0.0001149",
-      "liquidityUsd": 1085416.53
-    },
-    "poolB": {
-      "dex": "aerodrome",
-      "pairAddress": "0x74E4c08Bb50619b70550733D32b7e60424E9628e",
-      "priceUsd": "0.0001143",
-      "liquidityUsd": 28210.33
-    }
-  },
-  {
-    "symbol": "SOL",
-    "tokenAddress": "0x311935cd80b76769bf2ecc9d8ab7635b2139cf82",
-    "quoteSymbol": "WETH",
-    "spreadPercent": "0.50%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": false,
-    "poolA": {
-      "dex": "pancakeswap",
-      "pairAddress": "0xab07dE353E15b80fa3B4224D5C8fDF3Ac9F50670",
-      "priceUsd": "106.62",
-      "liquidityUsd": 456598.08
-    },
-    "poolB": {
-      "dex": "aerodrome",
-      "pairAddress": "0xFCCE67a155DF9a1a95BeCfe7D09E32DfbE6F9816",
-      "priceUsd": "106.094",
-      "liquidityUsd": 89509.51
-    }
-  },
-  {
-    "symbol": "SOL",
-    "tokenAddress": "0x311935cd80b76769bf2ecc9d8ab7635b2139cf82",
-    "quoteSymbol": "CBBTC",
-    "spreadPercent": "0.48%",
-    "strategy": "Memecoin Liquid Spread",
-    "isSmallPond": false,
-    "poolA": {
-      "dex": "pancakeswap",
-      "pairAddress": "0x8Df6dd38D718bD726374521c2DcFE90Eb9CB7d43",
-      "priceUsd": "106.63",
-      "liquidityUsd": 665456.08
-    },
-    "poolB": {
-      "dex": "aerodrome",
-      "pairAddress": "0xCcfA472815563ff9eB2de95C7b2bE1Ccf91f7F31",
-      "priceUsd": "106.12",
-      "liquidityUsd": 473230.53
-    }
-  },
-  {
-    "symbol": "MIGGLES",
-    "tokenAddress": "0xb1a03eda10342529bbf8eb700a06c60441fef25d",
-    "quoteSymbol": "WETH",
-    "spreadPercent": "0.37%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": false,
-    "poolA": {
-      "dex": "uniswap",
-      "pairAddress": "0x17A3Ad8c74c4947005aFEDa9965305ae2EB2518a",
-      "priceUsd": "0.001348",
-      "liquidityUsd": 351641.71
-    },
-    "poolB": {
-      "dex": "aerodrome",
-      "pairAddress": "0x326841EFD63340767e02ec88E583f18a82AF4A48",
-      "priceUsd": "0.001343",
-      "liquidityUsd": 2021.06
-    }
-  },
-  {
-    "symbol": "AERO",
-    "tokenAddress": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
-    "quoteSymbol": "CBBTC",
-    "spreadPercent": "0.27%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": false,
-    "poolA": {
-      "dex": "aerodrome",
-      "pairAddress": "0xdFe5F275020def30993f042174Fc2D335678b626",
-      "priceUsd": "0.8552",
-      "liquidityUsd": 2172209.04
-    },
-    "poolB": {
-      "dex": "uniswap",
-      "pairAddress": "0x714f049CaC863036F207a8BD6b283f822f61D079",
-      "priceUsd": "0.8529",
-      "liquidityUsd": 47932.01
-    }
-  },
-  {
-    "symbol": "Basecat",
-    "tokenAddress": "0xb2000000000000000000004c27f6523082f41d01",
-    "quoteSymbol": "WETH",
-    "spreadPercent": "0.25%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": false,
-    "poolA": {
-      "dex": "aerodrome",
-      "pairAddress": "0xfbA22a6B7629a2FEC052CC2a6Eddd2C9D6Da5eA5",
-      "priceUsd": "0.01192",
-      "liquidityUsd": 97148.4
-    },
-    "poolB": {
-      "dex": "uniswap",
-      "pairAddress": "0xf79478d5a6baE4546F7e489e80b2fC690B558944",
-      "priceUsd": "0.01195",
-      "liquidityUsd": 50543.16
-    }
-  },
-  {
-    "symbol": "VIRTUAL",
-    "tokenAddress": "0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b",
-    "quoteSymbol": "WETH",
-    "spreadPercent": "0.24%",
-    "strategy": "Memecoin Liquid Spread",
-    "isSmallPond": false,
-    "poolA": {
-      "dex": "aerodrome",
-      "pairAddress": "0x21594b992F68495dD28d605834b58889d0a727c7",
-      "priceUsd": "0.6720",
-      "liquidityUsd": 4713254.25
-    },
-    "poolB": {
-      "dex": "uniswap",
-      "pairAddress": "0xE31c372a7Af875b3B5E0F3713B17ef51556da667",
-      "priceUsd": "0.6736",
-      "liquidityUsd": 1323223.85
-    }
-  },
-  {
     "symbol": "cbDOGE",
     "tokenAddress": "0xcbd06e5a2b0c65597161de254aa074e489deb510",
     "quoteSymbol": "WETH",
-    "spreadPercent": "0.24%",
+    "spreadPercent": "1.36%",
     "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
     "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0xfb338cb462c9e44cAE9f442fEb09e8E904fFed47",
-      "priceUsd": "0.08021",
-      "liquidityUsd": 92358.18
+      "priceUsd": "0.08274",
+      "liquidityUsd": 66958.28,
+      "feePercent": "0.30%",
+      "feeBps": 30
     },
     "poolB": {
       "dex": "pancakeswap",
       "pairAddress": "0x28138bFEaDDC0f9Ab6Bb9303e67e2dA17fF2A7E1",
-      "priceUsd": "0.08040",
-      "liquidityUsd": 2543.04
-    }
+      "priceUsd": "0.08163",
+      "liquidityUsd": 2582.4,
+      "feePercent": "0.25%",
+      "feeBps": 25
+    },
+    "combinedFeePercent": "0.55%",
+    "netSpreadPercent": "+0.81%",
+    "isProfitable": true,
+    "decisionReason": "Profitable: Gross spread (1.36%) > DEX swap fees (0.55%) by +0.81% net."
+  },
+  {
+    "symbol": "TOSHI",
+    "tokenAddress": "0xac1bd2486aaf3b5c0fc3fd868558b082a531b2b4",
+    "quoteSymbol": "WETH",
+    "spreadPercent": "0.81%",
+    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "isSmallPond": false,
+    "poolA": {
+      "dex": "uniswap",
+      "pairAddress": "0x4b0Aaf3EBb163dd45F663b38b6d93f6093EBC2d3",
+      "priceUsd": "0.0001227",
+      "liquidityUsd": 1132120.45,
+      "feePercent": "0.30%",
+      "feeBps": 30
+    },
+    "poolB": {
+      "dex": "aerodrome",
+      "pairAddress": "0x74E4c08Bb50619b70550733D32b7e60424E9628e",
+      "priceUsd": "0.0001237",
+      "liquidityUsd": 30111.65,
+      "feePercent": "0.24%",
+      "feeBps": 24
+    },
+    "combinedFeePercent": "0.54%",
+    "netSpreadPercent": "+0.27%",
+    "isProfitable": true,
+    "decisionReason": "Profitable: Gross spread (0.81%) > DEX swap fees (0.54%) by +0.27% net."
+  },
+  {
+    "symbol": "cbZEC",
+    "tokenAddress": "0xb2000000000000000000008501b13360000cb2ec",
+    "quoteSymbol": "USDC",
+    "spreadPercent": "0.78%",
+    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "isSmallPond": false,
+    "poolA": {
+      "dex": "aerodrome",
+      "pairAddress": "0x0Fc47C17AF86078d809358db1b4db2DeBC988566",
+      "priceUsd": "1287.98",
+      "liquidityUsd": 755641.48,
+      "feePercent": "0.20%",
+      "feeBps": 20
+    },
+    "poolB": {
+      "dex": "uniswap",
+      "pairAddress": "0x824eD9D2f9ca65636ebA5A89D3BC3c9FE7cc3F9a",
+      "priceUsd": "1277.97",
+      "liquidityUsd": 54244.44,
+      "feePercent": "0.30%",
+      "feeBps": 30
+    },
+    "combinedFeePercent": "0.50%",
+    "netSpreadPercent": "+0.28%",
+    "isProfitable": true,
+    "decisionReason": "Profitable: Gross spread (0.78%) > DEX swap fees (0.50%) by +0.28% net."
+  },
+  {
+    "symbol": "VIRTUAL",
+    "tokenAddress": "0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b",
+    "quoteSymbol": "WETH",
+    "spreadPercent": "0.78%",
+    "strategy": "Memecoin Liquid Spread",
+    "isSmallPond": false,
+    "poolA": {
+      "dex": "aerodrome",
+      "pairAddress": "0x21594b992F68495dD28d605834b58889d0a727c7",
+      "priceUsd": "0.6581",
+      "liquidityUsd": 3473668,
+      "feePercent": "1.00%",
+      "feeBps": 100
+    },
+    "poolB": {
+      "dex": "uniswap",
+      "pairAddress": "0xE31c372a7Af875b3B5E0F3713B17ef51556da667",
+      "priceUsd": "0.6530",
+      "liquidityUsd": 1291211,
+      "feePercent": "0.30%",
+      "feeBps": 30
+    },
+    "combinedFeePercent": "1.30%",
+    "netSpreadPercent": "-0.52%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.78%) < DEX swap fees (1.30%: aerodrome 1.00% + uniswap 0.30%). Round-trip trade would lose 0.52% (-$5.20 per $1k flash loan). Autopilot safely rejected."
+  },
+  {
+    "symbol": "AERO",
+    "tokenAddress": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
+    "quoteSymbol": "WETH",
+    "spreadPercent": "0.66%",
+    "strategy": "Memecoin Liquid Spread",
+    "isSmallPond": false,
+    "poolA": {
+      "dex": "aerodrome",
+      "pairAddress": "0x7f670f78B17dEC44d5Ef68a48740b6f8849cc2e6",
+      "priceUsd": "0.8534",
+      "liquidityUsd": 3377748.02,
+      "feePercent": "1.00%",
+      "feeBps": 100
+    },
+    "poolB": {
+      "dex": "uniswap",
+      "pairAddress": "0x3d5D143381916280ff91407FeBEB52f2b60f33Cf",
+      "priceUsd": "0.8590",
+      "liquidityUsd": 1696546.93,
+      "feePercent": "0.30%",
+      "feeBps": 30
+    },
+    "combinedFeePercent": "1.30%",
+    "netSpreadPercent": "-0.64%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.66%) < DEX swap fees (1.30%: aerodrome 1.00% + uniswap 0.30%). Round-trip trade would lose 0.64%."
+  },
+  {
+    "symbol": "AERO",
+    "tokenAddress": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
+    "quoteSymbol": "USDC",
+    "spreadPercent": "0.60%",
+    "strategy": "Memecoin Liquid Spread",
+    "isSmallPond": false,
+    "poolA": {
+      "dex": "aerodrome",
+      "pairAddress": "0xBE00fF35AF70E8415D0eB605a286D8A45466A4c1",
+      "priceUsd": "0.8524",
+      "liquidityUsd": 1268314,
+      "feePercent": "0.30%",
+      "feeBps": 30
+    },
+    "poolB": {
+      "dex": "uniswap",
+      "pairAddress": "0xE5B5f522E98B5a2baAe212d4dA66b865B781DB97",
+      "priceUsd": "0.8575",
+      "liquidityUsd": 219697.81,
+      "feePercent": "0.30%",
+      "feeBps": 30
+    },
+    "combinedFeePercent": "0.60%",
+    "netSpreadPercent": "+0.00%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.60%) < DEX swap fees (0.60%: aerodrome 0.30% + uniswap 0.30%). Round-trip trade would lose 0.00%."
   },
   {
     "symbol": "DEGEN",
     "tokenAddress": "0x4ed4e862860bed51a9570b96d89af5e1b0efefed",
     "quoteSymbol": "WETH",
-    "spreadPercent": "0.18%",
+    "spreadPercent": "0.27%",
     "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
     "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0xc9034c3E7F58003E6ae0C8438e7c8f4598d5ACAA",
-      "priceUsd": "0.0009555",
-      "liquidityUsd": 265809.2
+      "priceUsd": "0.0009913",
+      "liquidityUsd": 276703.83,
+      "feePercent": "0.30%",
+      "feeBps": 30
     },
     "poolB": {
       "dex": "aerodrome",
       "pairAddress": "0x2C4909355b0C036840819484c3A882A95659aBf3",
-      "priceUsd": "0.0009572",
-      "liquidityUsd": 30641
-    }
+      "priceUsd": "0.0009886",
+      "liquidityUsd": 31222.63,
+      "feePercent": "0.30%",
+      "feeBps": 30
+    },
+    "combinedFeePercent": "0.60%",
+    "netSpreadPercent": "-0.33%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.27%) < DEX swap fees (0.60%: uniswap 0.30% + aerodrome 0.30%). Round-trip trade would lose 0.33%."
+  },
+  {
+    "symbol": "AERO",
+    "tokenAddress": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
+    "quoteSymbol": "CBBTC",
+    "spreadPercent": "0.19%",
+    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "isSmallPond": false,
+    "poolA": {
+      "dex": "aerodrome",
+      "pairAddress": "0xdFe5F275020def30993f042174Fc2D335678b626",
+      "priceUsd": "0.8595",
+      "liquidityUsd": 2180008.2,
+      "feePercent": "0.07%",
+      "feeBps": 8
+    },
+    "poolB": {
+      "dex": "uniswap",
+      "pairAddress": "0x714f049CaC863036F207a8BD6b283f822f61D079",
+      "priceUsd": "0.8579",
+      "liquidityUsd": 47951.28,
+      "feePercent": "0.30%",
+      "feeBps": 30
+    },
+    "combinedFeePercent": "0.38%",
+    "netSpreadPercent": "-0.18%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.19%) < DEX swap fees (0.38%: aerodrome 0.07% + uniswap 0.30%). Round-trip trade would lose 0.18%."
   },
   {
     "symbol": "VIRTUAL",
     "tokenAddress": "0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b",
     "quoteSymbol": "USDC",
-    "spreadPercent": "0.18%",
+    "spreadPercent": "0.16%",
     "strategy": "Memecoin Liquid Spread",
     "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0x529d2863a1521d0b57db028168fdE2E97120017C",
-      "priceUsd": "0.6752",
-      "liquidityUsd": 817415.35
+      "priceUsd": "0.6908",
+      "liquidityUsd": 833041.06,
+      "feePercent": "0.30%",
+      "feeBps": 30
     },
     "poolB": {
       "dex": "pancakeswap",
       "pairAddress": "0x7CB770D0513c30e0CB45E4899e4a2CbEEd6F9830",
-      "priceUsd": "0.6764",
-      "liquidityUsd": 181073.2
-    }
+      "priceUsd": "0.6919",
+      "liquidityUsd": 184880.8,
+      "feePercent": "0.05%",
+      "feeBps": 5
+    },
+    "combinedFeePercent": "0.35%",
+    "netSpreadPercent": "-0.19%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.16%) < DEX swap fees (0.35%: uniswap 0.30% + pancakeswap 0.05%). Round-trip trade would lose 0.19%."
+  },
+  {
+    "symbol": "Basecat",
+    "tokenAddress": "0xb2000000000000000000004c27f6523082f41d01",
+    "quoteSymbol": "WETH",
+    "spreadPercent": "0.16%",
+    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "isSmallPond": false,
+    "poolA": {
+      "dex": "aerodrome",
+      "pairAddress": "0xfbA22a6B7629a2FEC052CC2a6Eddd2C9D6Da5eA5",
+      "priceUsd": "0.01219",
+      "liquidityUsd": 89841.92,
+      "feePercent": "0.30%",
+      "feeBps": 30
+    },
+    "poolB": {
+      "dex": "uniswap",
+      "pairAddress": "0xf79478d5a6baE4546F7e489e80b2fC690B558944",
+      "priceUsd": "0.01217",
+      "liquidityUsd": 51652.78,
+      "feePercent": "0.30%",
+      "feeBps": 30
+    },
+    "combinedFeePercent": "0.60%",
+    "netSpreadPercent": "-0.44%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.16%) < DEX swap fees (0.60%: aerodrome 0.30% + uniswap 0.30%). Round-trip trade would lose 0.44%."
+  },
+  {
+    "symbol": "KEYCAT",
+    "tokenAddress": "0x9a26f5433671751c3276a065f57e5a02d2817973",
+    "quoteSymbol": "WETH",
+    "spreadPercent": "0.13%",
+    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "isSmallPond": false,
+    "poolA": {
+      "dex": "uniswap",
+      "pairAddress": "0x377FeeeD4820B3B28D1ab429509e7A0789824fCA",
+      "priceUsd": "0.0005298",
+      "liquidityUsd": 785324.08,
+      "feePercent": "0.30%",
+      "feeBps": 30
+    },
+    "poolB": {
+      "dex": "aerodrome",
+      "pairAddress": "0xB211a9DDff3a10806c8fdb92Dbc4c34596A23F84",
+      "priceUsd": "0.0005291",
+      "liquidityUsd": 20092.07,
+      "feePercent": "0.25%",
+      "feeBps": 25
+    },
+    "combinedFeePercent": "0.55%",
+    "netSpreadPercent": "-0.42%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.13%) < DEX swap fees (0.55%: uniswap 0.30% + aerodrome 0.25%). Round-trip trade would lose 0.42%."
+  },
+  {
+    "symbol": "cbBTC",
+    "tokenAddress": "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf",
+    "quoteSymbol": "WETH",
+    "spreadPercent": "0.10%",
+    "strategy": "Memecoin Liquid Spread",
+    "isSmallPond": false,
+    "poolA": {
+      "dex": "aerodrome",
+      "pairAddress": "0x7C7420DD105E2779316423Ba3E973f434315EFA9",
+      "priceUsd": "83467.13",
+      "liquidityUsd": 3242931.01,
+      "feePercent": "0.01%",
+      "feeBps": 1
+    },
+    "poolB": {
+      "dex": "pancakeswap",
+      "pairAddress": "0xd974D59e30054cf1aBedeD0C9947B0D8Baf90029",
+      "priceUsd": "83552.050",
+      "liquidityUsd": 463075.09,
+      "feePercent": "0.05%",
+      "feeBps": 5
+    },
+    "combinedFeePercent": "0.06%",
+    "netSpreadPercent": "+0.04%",
+    "isProfitable": false,
+    "decisionReason": "Profitable: Gross spread (0.10%) > DEX swap fees (0.06%) by +0.04% net."
   },
   {
     "symbol": "BRETT",
@@ -269,75 +345,135 @@
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0xBA3F945812a83471d709BCe9C3CA699A19FB46f7",
-      "priceUsd": "0.004923",
-      "liquidityUsd": 1163416.18
+      "priceUsd": "0.005098",
+      "liquidityUsd": 1188838.01,
+      "feePercent": "1.00%",
+      "feeBps": 100
     },
     "poolB": {
       "dex": "aerodrome",
       "pairAddress": "0x4e829F8A5213c42535AB84AA40BD4aDCCE9cBa02",
-      "priceUsd": "0.004927",
-      "liquidityUsd": 776448.41
-    }
+      "priceUsd": "0.005102",
+      "liquidityUsd": 784504.78,
+      "feePercent": "0.21%",
+      "feeBps": 21
+    },
+    "combinedFeePercent": "1.21%",
+    "netSpreadPercent": "-1.13%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.08%) < DEX swap fees (1.21%: uniswap 1.00% + aerodrome 0.21%). Round-trip trade would lose 1.13%."
+  },
+  {
+    "symbol": "MIGGLES",
+    "tokenAddress": "0xb1a03eda10342529bbf8eb700a06c60441fef25d",
+    "quoteSymbol": "WETH",
+    "spreadPercent": "0.07%",
+    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "isSmallPond": false,
+    "poolA": {
+      "dex": "uniswap",
+      "pairAddress": "0x17A3Ad8c74c4947005aFEDa9965305ae2EB2518a",
+      "priceUsd": "0.001377",
+      "liquidityUsd": 356794.58,
+      "feePercent": "0.30%",
+      "feeBps": 30
+    },
+    "poolB": {
+      "dex": "aerodrome",
+      "pairAddress": "0x326841EFD63340767e02ec88E583f18a82AF4A48",
+      "priceUsd": "0.001376",
+      "liquidityUsd": 2067.33,
+      "feePercent": "0.30%",
+      "feeBps": 30
+    },
+    "combinedFeePercent": "0.60%",
+    "netSpreadPercent": "-0.53%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.07%) < DEX swap fees (0.60%: uniswap 0.30% + aerodrome 0.30%). Round-trip trade would lose 0.53%."
+  },
+  {
+    "symbol": "SOL",
+    "tokenAddress": "0x311935cd80b76769bf2ecc9d8ab7635b2139cf82",
+    "quoteSymbol": "CBBTC",
+    "spreadPercent": "0.06%",
+    "strategy": "Memecoin Liquid Spread",
+    "isSmallPond": false,
+    "poolA": {
+      "dex": "pancakeswap",
+      "pairAddress": "0x8Df6dd38D718bD726374521c2DcFE90Eb9CB7d43",
+      "priceUsd": "106.97",
+      "liquidityUsd": 668983.88,
+      "feePercent": "0.05%",
+      "feeBps": 5
+    },
+    "poolB": {
+      "dex": "aerodrome",
+      "pairAddress": "0xCcfA472815563ff9eB2de95C7b2bE1Ccf91f7F31",
+      "priceUsd": "107.029",
+      "liquidityUsd": 524030.12,
+      "feePercent": "0.03%",
+      "feeBps": 3
+    },
+    "combinedFeePercent": "0.08%",
+    "netSpreadPercent": "-0.02%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.06%) < DEX swap fees (0.08%: pancakeswap 0.05% + aerodrome 0.03%). Round-trip trade would lose 0.02%."
   },
   {
     "symbol": "SOL",
     "tokenAddress": "0x311935cd80b76769bf2ecc9d8ab7635b2139cf82",
     "quoteSymbol": "USDC",
-    "spreadPercent": "0.02%",
+    "spreadPercent": "0.03%",
     "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
     "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0x1131DB5977242a03eBeaD1aCD18F80A9A29e5922",
-      "priceUsd": "106.50",
-      "liquidityUsd": 664118.99
+      "priceUsd": "106.84",
+      "liquidityUsd": 543471.79,
+      "feePercent": "0.30%",
+      "feeBps": 30
     },
     "poolB": {
       "dex": "pancakeswap",
       "pairAddress": "0x04d25d8f94A2018F8DdDe1E7941c625FA1a2c7cE",
-      "priceUsd": "106.48",
-      "liquidityUsd": 71101.14
-    }
-  },
-  {
-    "symbol": "AERO",
-    "tokenAddress": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
-    "quoteSymbol": "WETH",
-    "spreadPercent": "0.01%",
-    "strategy": "Memecoin Liquid Spread",
-    "isSmallPond": false,
-    "poolA": {
-      "dex": "aerodrome",
-      "pairAddress": "0x7f670f78B17dEC44d5Ef68a48740b6f8849cc2e6",
-      "priceUsd": "0.8536",
-      "liquidityUsd": 3354445.37
+      "priceUsd": "106.81",
+      "liquidityUsd": 70601.99,
+      "feePercent": "0.05%",
+      "feeBps": 5
     },
-    "poolB": {
-      "dex": "uniswap",
-      "pairAddress": "0x3d5D143381916280ff91407FeBEB52f2b60f33Cf",
-      "priceUsd": "0.8535",
-      "liquidityUsd": 1670847.02
-    }
+    "combinedFeePercent": "0.35%",
+    "netSpreadPercent": "-0.32%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.03%) < DEX swap fees (0.35%: aerodrome 0.30% + pancakeswap 0.05%). Round-trip trade would lose 0.32%."
   },
   {
-    "symbol": "KEYCAT",
-    "tokenAddress": "0x9a26f5433671751c3276a065f57e5a02d2817973",
+    "symbol": "SOL",
+    "tokenAddress": "0x311935cd80b76769bf2ecc9d8ab7635b2139cf82",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.00%",
     "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
     "isSmallPond": false,
     "poolA": {
-      "dex": "uniswap",
-      "pairAddress": "0x377FeeeD4820B3B28D1ab429509e7A0789824fCA",
-      "priceUsd": "0.0005259",
-      "liquidityUsd": 778763.63
+      "dex": "pancakeswap",
+      "pairAddress": "0xab07dE353E15b80fa3B4224D5C8fDF3Ac9F50670",
+      "priceUsd": "106.86",
+      "liquidityUsd": 508616.26,
+      "feePercent": "0.30%",
+      "feeBps": 30
     },
     "poolB": {
       "dex": "aerodrome",
-      "pairAddress": "0xB211a9DDff3a10806c8fdb92Dbc4c34596A23F84",
-      "priceUsd": "0.0005259",
-      "liquidityUsd": 19948.83
-    }
+      "pairAddress": "0xFCCE67a155DF9a1a95BeCfe7D09E32DfbE6F9816",
+      "priceUsd": "106.86",
+      "liquidityUsd": 89693.96,
+      "feePercent": "0.03%",
+      "feeBps": 3
+    },
+    "combinedFeePercent": "0.33%",
+    "netSpreadPercent": "-0.33%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.00%) < DEX swap fees (0.33%: pancakeswap 0.30% + aerodrome 0.03%). Round-trip trade would lose 0.33%."
   },
   {
     "symbol": "cbXRP",
@@ -349,15 +485,23 @@
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0xB90fe999Be6869AF0aFC557DCCfBE169EA3403D6",
-      "priceUsd": "1.32",
-      "liquidityUsd": 710294.16
+      "priceUsd": "1.35",
+      "liquidityUsd": 802903.4,
+      "feePercent": "0.05%",
+      "feeBps": 5
     },
     "poolB": {
       "dex": "pancakeswap",
       "pairAddress": "0x170b6bFc071426aaB7C81AE12383219facBb6B6A",
-      "priceUsd": "1.32",
-      "liquidityUsd": 101515.13
-    }
+      "priceUsd": "1.35",
+      "liquidityUsd": 103723.24,
+      "feePercent": "0.05%",
+      "feeBps": 5
+    },
+    "combinedFeePercent": "0.10%",
+    "netSpreadPercent": "-0.10%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.00%) < DEX swap fees (0.10%: aerodrome 0.05% + pancakeswap 0.05%). Round-trip trade would lose 0.10%."
   },
   {
     "symbol": "cbXRP",
@@ -369,14 +513,22 @@
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0x62916B911F2B64d0e3A3b72472D6f8C08c75DcAA",
-      "priceUsd": "1.32",
-      "liquidityUsd": 248721.34
+      "priceUsd": "1.35",
+      "liquidityUsd": 356360.97,
+      "feePercent": "0.20%",
+      "feeBps": 20
     },
     "poolB": {
       "dex": "pancakeswap",
       "pairAddress": "0x13c9C9196f05989E28284F9Ba5a97f24e87D3072",
-      "priceUsd": "1.32",
-      "liquidityUsd": 32103.25
-    }
+      "priceUsd": "1.35",
+      "liquidityUsd": 32857.03,
+      "feePercent": "0.25%",
+      "feeBps": 25
+    },
+    "combinedFeePercent": "0.45%",
+    "netSpreadPercent": "-0.45%",
+    "isProfitable": false,
+    "decisionReason": "Sub-Fee Loss: Gross spread (0.00%) < DEX swap fees (0.45%: aerodrome 0.20% + pancakeswap 0.25%). Round-trip trade would lose 0.45%."
   }
 ]

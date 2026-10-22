@@ -706,11 +706,26 @@ async function runAutopilotMonitoringCycle() {
     return; // Fail closed: never label profitable from synthetic reserves
   }
 
+  let feeA_Bps = 30;
+  let feeB_Bps = 30;
+  let feeAPct = 0.30;
+  let feeBPct = 0.30;
+  let grossSpreadPct = parseFloat(currentPair.spreadPercent?.replace("%", "") || "0");
+
   // Case 1: Both are Uniswap V2 constant-product pools
   if (poolAInfo.type === "V2" && poolBInfo.type === "V2") {
-    const feeA = poolAInfo.feeBps || 30;
-    const feeB = poolBInfo.feeBps || 30;
-    const combinedFeePct = ((feeA + feeB) / 100).toFixed(2);
+    feeA_Bps = poolAInfo.feeBps || 30;
+    feeB_Bps = poolBInfo.feeBps || 30;
+    feeAPct = feeA_Bps / 100;
+    feeBPct = feeB_Bps / 100;
+    const combinedFeePct = ((feeA_Bps + feeB_Bps) / 100).toFixed(2);
+
+    if (poolAInfo.reserve0 > 0n && poolBInfo.reserve0 > 0n) {
+      const pA = Number(poolAInfo.reserve1) / Number(poolAInfo.reserve0);
+      const pB = Number(poolBInfo.reserve1) / Number(poolBInfo.reserve0);
+      const minP = Math.min(pA, pB);
+      if (minP > 0) grossSpreadPct = (Math.abs(pA - pB) / minP) * 100;
+    }
 
     routeOpt = evaluateTwoPoolArbitrage(
       {
@@ -719,7 +734,7 @@ async function runAutopilotMonitoringCycle() {
         token1: poolAInfo.token1,
         reserve0: poolAInfo.reserve0,
         reserve1: poolAInfo.reserve1,
-        feeBps: feeA
+        feeBps: feeA_Bps
       },
       {
         pairAddress: poolBAddr,
@@ -727,7 +742,7 @@ async function runAutopilotMonitoringCycle() {
         token1: poolBInfo.token1,
         reserve0: poolBInfo.reserve0,
         reserve1: poolBInfo.reserve1,
-        feeBps: feeB
+        feeBps: feeB_Bps
       }
     );
 
@@ -737,10 +752,7 @@ async function runAutopilotMonitoringCycle() {
         getTokenDecimals(routeOpt.repayToken, provider)
       ]);
     } else {
-      const priceA = Number(poolAInfo.reserve1) / Number(poolAInfo.reserve0);
-      const priceB = Number(poolBInfo.reserve1) / Number(poolBInfo.reserve0);
-      const rawSpreadPct = (Math.abs(priceA - priceB) / Math.min(priceA, priceB)) * 100;
-      logEvent("AUTOPILOT", "info", `[V2-to-V2] ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex}): Raw spread ${rawSpreadPct.toFixed(2)}% is within combined pool fees (${combinedFeePct}%: ${(feeA/100).toFixed(2)}% + ${(feeB/100).toFixed(2)}%) & slippage`);
+      logEvent("AUTOPILOT", "info", `[V2-to-V2] ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex}): Raw spread ${grossSpreadPct.toFixed(2)}% is within combined pool fees (${combinedFeePct}%: ${(feeA_Bps/100).toFixed(2)}% + ${(feeB_Bps/100).toFixed(2)}%) & slippage`);
     }
   }
   // Case 2: One is Uniswap V2 and the other is Uniswap V3 / Slipstream (Cross-Type CLAMM)
@@ -748,8 +760,21 @@ async function runAutopilotMonitoringCycle() {
     const v2Pool = poolAInfo.type === "V2" ? poolAInfo : poolBInfo;
     const v3Pool = poolAInfo.type === "V3" ? poolAInfo : poolBInfo;
 
+    feeA_Bps = poolAInfo.type === "V2" ? (poolAInfo.feeBps || 30) : Math.round((poolAInfo.feeMillionths || 3000) / 100);
+    feeB_Bps = poolBInfo.type === "V2" ? (poolBInfo.feeBps || 30) : Math.round((poolBInfo.feeMillionths || 3000) / 100);
+    feeAPct = feeA_Bps / 100;
+    feeBPct = feeB_Bps / 100;
+
     const feeBpsV2 = v2Pool.feeBps || 30;
     const feeV3Millionths = v3Pool.feeMillionths || 3000;
+
+    if (v2Pool.reserve0 > 0n && v3Pool.sqrtPriceX96 > 0n) {
+      const pV2 = Number(v2Pool.reserve1) / Number(v2Pool.reserve0);
+      const sqrtP = Number(v3Pool.sqrtPriceX96) / (2 ** 96);
+      const pV3 = sqrtP * sqrtP;
+      const minP = Math.min(pV2, pV3);
+      if (minP > 0) grossSpreadPct = (Math.abs(pV2 - pV3) / minP) * 100;
+    }
 
     const sizing = V3QuoterEngine.findOptimalCrossV2V3BorrowBest(
       {
@@ -791,9 +816,23 @@ async function runAutopilotMonitoringCycle() {
   }
   // Case 3: Both are Uniswap V3 / Slipstream / Pancake V3 pools (Solution 6: V3-to-V3 Concentrated Liquidity Arbitrage)
   else if (poolAInfo.type === "V3" && poolBInfo.type === "V3") {
-    const feeAPct = ((poolAInfo.feeMillionths || 3000) / 10000).toFixed(2);
-    const feeBPct = ((poolBInfo.feeMillionths || 3000) / 10000).toFixed(2);
-    logEvent("AUTOPILOT", "info", `[V3-to-V3] 🔍 Evaluating Concentrated Liquidity for ${currentPair.symbol} | Pool A (${currentPair.poolA.dex}): fee ${feeAPct}%, liq ${poolAInfo.liquidity} | Pool B (${currentPair.poolB.dex}): fee ${feeBPct}%, liq ${poolBInfo.liquidity}`);
+    feeA_Bps = Math.round((poolAInfo.feeMillionths || 3000) / 100);
+    feeB_Bps = Math.round((poolBInfo.feeMillionths || 3000) / 100);
+    feeAPct = (poolAInfo.feeMillionths || 3000) / 10000;
+    feeBPct = (poolBInfo.feeMillionths || 3000) / 10000;
+    const feeAPctStr = feeAPct.toFixed(2);
+    const feeBPctStr = feeBPct.toFixed(2);
+
+    if (poolAInfo.sqrtPriceX96 > 0n && poolBInfo.sqrtPriceX96 > 0n) {
+      const sqrtA = Number(poolAInfo.sqrtPriceX96) / (2 ** 96);
+      const sqrtB = Number(poolBInfo.sqrtPriceX96) / (2 ** 96);
+      const pA = sqrtA * sqrtA;
+      const pB = sqrtB * sqrtB;
+      const minP = Math.min(pA, pB);
+      if (minP > 0) grossSpreadPct = (Math.abs(pA - pB) / minP) * 100;
+    }
+
+    logEvent("AUTOPILOT", "info", `[V3-to-V3] 🔍 Evaluating Concentrated Liquidity for ${currentPair.symbol} | Pool A (${currentPair.poolA.dex}): fee ${feeAPctStr}%, liq ${poolAInfo.liquidity} | Pool B (${currentPair.poolB.dex}): fee ${feeBPctStr}%, liq ${poolBInfo.liquidity}`);
 
     const sizing = V3QuoterEngine.findOptimalV3ToV3BorrowBest(poolAInfo, poolBInfo);
 
@@ -831,7 +870,50 @@ async function runAutopilotMonitoringCycle() {
     return;
   }
 
-  // Reject missing, stale, or unprofitable pool routes
+  // Live Math & Decision Reasoning calculation for UI Synchronization
+  const combinedFeePct = feeAPct + feeBPct;
+  const netSpreadPct = grossSpreadPct - combinedFeePct;
+  const isNetProfitable = Boolean(routeOpt && routeOpt.isProfitable && routeOpt.maxProfit > 0n);
+
+  let decisionReason = "";
+  if (isNetProfitable) {
+    decisionReason = `Profitable on-chain: Net spread +${netSpreadPct.toFixed(2)}% after DEX fees (${combinedFeePct.toFixed(2)}%). Executing sizing & pre-flight simulation.`;
+  } else if (grossSpreadPct <= combinedFeePct) {
+    const lossPct = Math.abs(netSpreadPct).toFixed(2);
+    const lossUsd = (Math.abs(netSpreadPct) * 10).toFixed(2);
+    decisionReason = `Sub-Fee Loss: Gross spread (${grossSpreadPct.toFixed(2)}%) < DEX swap fees (${combinedFeePct.toFixed(2)}%: ${currentPair.poolA.dex} ${feeAPct.toFixed(2)}% + ${currentPair.poolB.dex} ${feeBPct.toFixed(2)}%). Round-trip trade would lose ${lossPct}% (-$${lossUsd} per $1k flash loan). Trade rejected to protect capital.`;
+  } else {
+    decisionReason = `Slippage Rejection: Gross spread (${grossSpreadPct.toFixed(2)}%) > fees (${combinedFeePct.toFixed(2)}%), but pool depth causes price impact exceeding net margin. Execution blocked.`;
+  }
+
+  // Synchronize pair in-memory state
+  currentPair.spreadPercent = `${grossSpreadPct.toFixed(2)}%`;
+  currentPair.combinedFeePercent = `${combinedFeePct.toFixed(2)}%`;
+  currentPair.netSpreadPercent = `${netSpreadPct >= 0 ? "+" : ""}${netSpreadPct.toFixed(2)}%`;
+  currentPair.isProfitable = isNetProfitable;
+  currentPair.decisionReason = decisionReason;
+  currentPair.poolA.feePercent = `${feeAPct.toFixed(2)}%`;
+  currentPair.poolA.feeBps = feeA_Bps;
+  currentPair.poolB.feePercent = `${feeBPct.toFixed(2)}%`;
+  currentPair.poolB.feeBps = feeB_Bps;
+
+  // Broadcast live sync update to Discovery Table & Radar Feed
+  broadcast({
+    type: "pair_sync_update",
+    pair: currentPair,
+    timestamp: new Date().toLocaleTimeString()
+  });
+
+  if (grossSpreadPct >= 0.10) {
+    broadcast({
+      type: "opportunity",
+      pair: currentPair,
+      spread: `${grossSpreadPct.toFixed(2)}%`,
+      timestamp: new Date().toLocaleTimeString()
+    });
+  }
+
+  // Reject missing, stale, or unprofitable pool routes for on-chain execution
   if (!routeOpt || !routeOpt.isProfitable || routeOpt.maxProfit <= 0n) {
     return;
   }
@@ -1569,6 +1651,8 @@ app.post("/api/calculate", (req, res) => {
       r1_A: r1_A_str,
       r0_B: r0_B_str,
       r1_B: r1_B_str,
+      feeBorrowBps = 30,
+      feeTargetBps = 30,
       token0Decimals = 18,
       token1Decimals = 18,
       token0Symbol = "TOKEN0",
@@ -1583,20 +1667,41 @@ app.post("/api/calculate", (req, res) => {
 
     const priceA = (Number(r1_A) / 10 ** Number(token1Decimals)) / (Number(r0_A) / 10 ** Number(token0Decimals));
     const priceB = (Number(r1_B) / 10 ** Number(token1Decimals)) / (Number(r0_B) / 10 ** Number(token0Decimals));
-    const spreadPercent = ((Math.abs(priceA - priceB) / Math.min(priceA, priceB)) * 100).toFixed(2);
+    const minPrice = Math.min(priceA, priceB);
+    const spreadPercent = minPrice > 0 ? ((Math.abs(priceA - priceB) / minPrice) * 100).toFixed(2) : "0.00";
 
-    const { optimalBorrow, maxProfit, isProfitable } = findOptimalBorrowAmount(r0_A, r1_A, r0_B, r1_B);
+    const feeA_Bps = Number(feeBorrowBps) || 30;
+    const feeB_Bps = Number(feeTargetBps) || 30;
+    const combinedFeePct = ((feeA_Bps + feeB_Bps) / 100).toFixed(2);
+    const netSpreadVal = (parseFloat(spreadPercent) - parseFloat(combinedFeePct)).toFixed(2);
+    const isSubFeeLoss = parseFloat(netSpreadVal) < 0;
 
-    let optimalBorrowFormatted = "0";
-    let grossProfitFormatted = "0";
-    let netProfitFormatted = "0";
-    let validatorTipFormatted = "0";
-    let requiredRepayFormatted = "0";
-    let expectedOutputFormatted = "0";
+    const feeMultiplierA = BigInt(10000 - feeA_Bps);
+    const feeMultiplierB = BigInt(10000 - feeB_Bps);
+
+    const { optimalBorrow, maxProfit, isProfitable } = findOptimalBorrowAmount(
+      r0_A,
+      r1_A,
+      r0_B,
+      r1_B,
+      {
+        feeBorrow: feeMultiplierA,
+        feeTarget: feeMultiplierB,
+        feeBase: 10000n
+      }
+    );
+
+    let optimalBorrowFormatted = "0.0000";
+    let grossProfitFormatted = "0.00";
+    let netProfitFormatted = "0.00";
+    let validatorTipFormatted = "0.00";
+    let requiredRepayFormatted = "0.00";
+    let expectedOutputFormatted = "0.00";
+    const curvePoints = [];
 
     if (isProfitable && optimalBorrow > 0n) {
-      const amountOutB = calculateAmountOut(optimalBorrow, r0_B, r1_B);
-      const amountRequiredA = calculateAmountIn(optimalBorrow, r1_A, r0_A);
+      const amountOutB = calculateAmountOut(optimalBorrow, r0_B, r1_B, feeMultiplierB, 10000n);
+      const amountRequiredA = calculateAmountIn(optimalBorrow, r1_A, r0_A, feeMultiplierA, 10000n);
 
       optimalBorrowFormatted = ethers.formatUnits(optimalBorrow, token0Decimals);
       grossProfitFormatted = ethers.formatUnits(maxProfit, token1Decimals);
@@ -1609,15 +1714,12 @@ app.post("/api/calculate", (req, res) => {
 
       validatorTipFormatted = ethers.formatUnits(tipAmount, token1Decimals);
       netProfitFormatted = ethers.formatUnits(netProfit, token1Decimals);
-    }
 
-    const curvePoints = [];
-    if (isProfitable && optimalBorrow > 0n) {
       const fractions = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0];
       for (const frac of fractions) {
         const borrowPoint = BigInt(Math.floor(Number(optimalBorrow) * frac));
         if (borrowPoint > 0n && borrowPoint < r0_A) {
-          const profit = calculateNetProfit(borrowPoint, r0_A, r1_A, r0_B, r1_B);
+          const profit = calculateNetProfit(borrowPoint, r0_A, r1_A, r0_B, r1_B, feeMultiplierA, feeMultiplierB, 10000n);
           const profitFloat = parseFloat(ethers.formatUnits(profit > 0n ? profit : 0n, token1Decimals));
           curvePoints.push({
             fraction: `${Math.round(frac * 100)}%`,
@@ -1627,13 +1729,52 @@ app.post("/api/calculate", (req, res) => {
           });
         }
       }
+    } else {
+      // Sub-fee loss: generate representative sample trade sizes to demonstrate the loss curve
+      const sampleSizes = [
+        { label: "10% Pool Size", frac: 0.001 },
+        { label: "25% Pool Size", frac: 0.0025 },
+        { label: "50% Pool Size", frac: 0.005 },
+        { label: "100% Sample Size", frac: 0.01 },
+        { label: "200% Sample Size", frac: 0.02 }
+      ];
+
+      for (const s of sampleSizes) {
+        let sampleBorrow = BigInt(Math.floor(Number(r0_A) * s.frac));
+        if (sampleBorrow <= 0n) sampleBorrow = 10n ** BigInt(token0Decimals);
+        const amountOutB = calculateAmountOut(sampleBorrow, r0_B, r1_B, feeMultiplierB, 10000n);
+        const amountRequiredA = calculateAmountIn(sampleBorrow, r1_A, r0_A, feeMultiplierA, 10000n);
+        const lossAmount = amountRequiredA > amountOutB ? amountRequiredA - amountOutB : 0n;
+        const lossFloat = -parseFloat(ethers.formatUnits(lossAmount, token1Decimals));
+
+        curvePoints.push({
+          fraction: s.label,
+          borrow: parseFloat(ethers.formatUnits(sampleBorrow, token0Decimals)),
+          profit: lossFloat,
+          isOptimal: false
+        });
+      }
+
+      const sample1kLoss = (1000 * Math.abs(parseFloat(netSpreadVal)) / 100).toFixed(2);
+      grossProfitFormatted = `-${Math.abs(parseFloat(netSpreadVal)).toFixed(2)}% (Loss)`;
+      netProfitFormatted = `-$${sample1kLoss} / $1k`;
     }
 
+    const rejectionReason = isSubFeeLoss
+      ? `Sub-Fee Arbitrage Loss: Gross price spread (${spreadPercent}%) is lower than combined DEX LP swap fees (${combinedFeePct}%: Borrow Pool ${(feeA_Bps/100).toFixed(2)}% + Target Pool ${(feeB_Bps/100).toFixed(2)}%). Executing this trade guarantees a -${Math.abs(parseFloat(netSpreadVal)).toFixed(2)}% capital loss (-$${(Math.abs(parseFloat(netSpreadVal)) * 10).toFixed(2)} per $1,000 flash loan). Autopilot strictly rejects this route to prevent loss.`
+      : (!isProfitable
+        ? `Slippage Rejection: Gross spread (${spreadPercent}%) exceeds fees (${combinedFeePct}%), but pool depth causes price impact that exceeds the profit margin. Trade rejected to protect capital.`
+        : null);
+
     res.json({
-      isProfitable,
+      isProfitable: isProfitable && optimalBorrow > 0n,
+      isSubFeeLoss,
+      rejectionReason,
       priceA,
       priceB,
       spreadPercent: `${spreadPercent}%`,
+      combinedFeePercent: `${combinedFeePct}%`,
+      netSpreadPercent: `${parseFloat(netSpreadVal) >= 0 ? "+" : ""}${netSpreadVal}%`,
       optimalBorrow: optimalBorrowFormatted,
       grossProfit: grossProfitFormatted,
       validatorTip: validatorTipFormatted,

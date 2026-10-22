@@ -169,6 +169,10 @@ function handleWsMessage(payload) {
       renderOpportunityCard(payload.pair, payload.spread, payload.timestamp);
       break;
 
+    case "pair_sync_update":
+      updatePairInDiscoveryAndRadar(payload.pair, payload.timestamp);
+      break;
+
     case "autopilot_state":
       updateAutopilotUI(payload.data);
       break;
@@ -654,35 +658,84 @@ function renderOpportunityCard(pair, spread, timestamp) {
   if (empty) empty.remove();
 
   const cardId = `opp-card-${(pair.symbol || "").replace(/[^a-zA-Z0-9]/g, "_")}-${(pair.quoteSymbol || "").replace(/[^a-zA-Z0-9]/g, "_")}`;
-  const existing = document.getElementById(cardId);
-  if (existing) {
-    const badge = existing.querySelector(".opp-spread-badge");
-    if (badge) badge.textContent = `${spread} Spread`;
-    container.prepend(existing);
-    return;
+  let card = document.getElementById(cardId);
+  const isNew = !card;
+  if (isNew) {
+    card = document.createElement("div");
+    card.className = "opp-card-item";
+    card.id = cardId;
   }
-
-  const card = document.createElement("div");
-  card.className = "opp-card-item";
-  card.id = cardId;
 
   const dexA = pair.poolA?.dex || "DEX A";
   const dexB = pair.poolB?.dex || "DEX B";
   const priceA = formatOppPrice(pair.poolA?.priceUsd);
   const priceB = formatOppPrice(pair.poolB?.priceUsd);
 
+  const feeAVal = parseFloat(String(pair.poolA?.feePercent || "0.30").replace("%", ""));
+  const feeBVal = parseFloat(String(pair.poolB?.feePercent || "0.30").replace("%", ""));
+  const combinedFeeVal = parseFloat(String(pair.combinedFeePercent || (feeAVal + feeBVal).toFixed(2)).replace("%", ""));
+  const rawSpreadVal = parseFloat(String(spread || pair.spreadPercent || "0").replace("%", ""));
+  const netSpreadVal = parseFloat(String(pair.netSpreadPercent || (rawSpreadVal - combinedFeeVal).toFixed(2)).replace("%", ""));
+  const isLoss = netSpreadVal <= 0;
+
+  // Exact math per $1,000 flash loan
+  const grossUsd = (1000 * (rawSpreadVal / 100)).toFixed(2);
+  const feesUsd = (1000 * (combinedFeeVal / 100)).toFixed(2);
+  const netUsd = (1000 * (netSpreadVal / 100)).toFixed(2);
+
+  const statusBadge = isLoss
+    ? `<span class="badge-pro" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; font-size: 0.72rem; font-weight: 800;">❌ SUB-FEE LOSS (${netSpreadVal.toFixed(2)}%)</span>`
+    : `<span class="badge-pro" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid #10b981; font-size: 0.72rem; font-weight: 800;">🟢 NET PROFIT (+${netSpreadVal.toFixed(2)}%)</span>`;
+
+  const decisionExplanation = pair.decisionReason || (isLoss
+    ? `Gross spread (${rawSpreadVal.toFixed(2)}%) is less than DEX swap fees (${combinedFeeVal.toFixed(2)}%: ${dexA} ${feeAVal.toFixed(2)}% + ${dexB} ${feeBVal.toFixed(2)}%). A $1,000 flash loan loses $${Math.abs(netUsd)} to LP fees. Autopilot strictly blocked execution to protect capital.`
+    : `Gross spread (${rawSpreadVal.toFixed(2)}%) exceeds DEX swap fees (${combinedFeeVal.toFixed(2)}%) with positive net margin. Monitored for optimal execution.`);
+
   card.innerHTML = `
-    <div class="opp-header-row">
-      <span class="opp-token-title">${pair.symbol} / ${pair.quoteSymbol || "USD"}</span>
-      <span class="opp-spread-badge">${spread} Spread</span>
+    <div class="opp-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="opp-token-title" style="font-size: 1rem; font-weight: 800; color: #fff;">${pair.symbol} / ${pair.quoteSymbol || "USD"}</span>
+        <span style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono);">${timestamp || new Date().toLocaleTimeString()}</span>
+      </div>
+      <div>${statusBadge}</div>
     </div>
-    <div class="opp-dex-row">
-      <span>Borrow: ${dexA} (${priceA})</span>
-      <span>Target: ${dexB} (${priceB})</span>
+
+    <div class="opp-dex-row" style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 8px; color: var(--text-secondary); background: rgba(255,255,255,0.02); padding: 6px 10px; border-radius: 6px;">
+      <span><strong>Borrow:</strong> <span style="text-transform: capitalize; color: #38bdf8; font-weight: 600;">${dexA}</span> (${priceA}) <span style="font-size: 0.72rem; color: #f87171;">[Fee: ${feeAVal.toFixed(2)}%]</span></span>
+      <span><strong>Target:</strong> <span style="text-transform: capitalize; color: #c084fc; font-weight: 600;">${dexB}</span> (${priceB}) <span style="font-size: 0.72rem; color: #f87171;">[Fee: ${feeBVal.toFixed(2)}%]</span></span>
     </div>
-    <div class="opp-action-row">
-      <button class="btn btn-outline btn-sm btn-analyze-opp" data-pair='${JSON.stringify(pair)}'>
-        ⚡ Analyze in Calculator
+
+    <!-- Live Calculator Breakdown Box -->
+    <div class="opp-calc-breakdown" style="padding: 10px 12px; background: rgba(0, 0, 0, 0.45); border-radius: 8px; border: 1px solid ${isLoss ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'};">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">🧮 Flash Loan Math Calculator ($1,000 Loan)</span>
+        <span style="font-family: var(--font-mono); font-size: 0.8rem; font-weight: 800; color: ${isLoss ? '#f87171' : '#34d399'};">
+          ${isLoss ? `Net Yield: ${netSpreadVal.toFixed(2)}% (LOSS)` : `Net Yield: +${netSpreadVal.toFixed(2)}% (PROFIT)`}
+        </span>
+      </div>
+      <div style="font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-muted); line-height: 1.6;">
+        <div style="display: flex; justify-content: space-between;">
+          <span>• Gross Price Spread Gain:</span>
+          <span style="color: #38bdf8; font-weight: 600;">+${rawSpreadVal.toFixed(2)}% (+$${grossUsd})</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>• Combined DEX LP Swap Fees:</span>
+          <span style="color: #f87171; font-weight: 600;">-${combinedFeeVal.toFixed(2)}% (-$${feesUsd}) <span style="color: var(--text-muted); font-size: 0.7rem;">(${dexA} ${feeAVal.toFixed(2)}% + ${dexB} ${feeBVal.toFixed(2)}%)</span></span>
+        </div>
+        <div style="display: flex; justify-content: space-between; border-top: 1px dashed rgba(255,255,255,0.1); margin-top: 4px; padding-top: 4px;">
+          <span style="font-weight: 700; color: #fff;">• Net Flash Loan Yield:</span>
+          <span style="color: ${isLoss ? '#f87171' : '#34d399'}; font-weight: 800;">${isLoss ? '' : '+'}${netSpreadVal.toFixed(2)}% (${isLoss ? '-' : '+'}$${Math.abs(netUsd)} USD)</span>
+        </div>
+      </div>
+      <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 0.75rem; color: ${isLoss ? '#fca5a5' : '#86efac'}; line-height: 1.4;">
+        <strong style="color: #fff;">${isLoss ? '🛡️ Why Autopilot is Not Taking It:' : '🚀 Autopilot Status:'}</strong>
+        ${decisionExplanation}
+      </div>
+    </div>
+
+    <div class="opp-action-row" style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px;">
+      <button class="btn btn-outline btn-sm btn-analyze-opp" style="font-size: 0.76rem; padding: 6px 14px;">
+        ⚡ Open in Sizing Calculator
       </button>
     </div>
   `;
@@ -691,7 +744,11 @@ function renderOpportunityCard(pair, spread, timestamp) {
     loadPairIntoCalculator(pair);
   });
 
-  container.prepend(card);
+  if (isNew) {
+    container.prepend(card);
+  } else {
+    container.prepend(card);
+  }
 
   // Keep top 20
   if (container.children.length > 20) {
@@ -797,41 +854,72 @@ async function fetchPairs() {
 
 function renderPairsTable(pairs) {
   const tbody = document.getElementById("tbody-discovered-pairs");
+  if (!tbody) return;
   tbody.innerHTML = "";
 
-  if (pairs.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 30px;">No pairs found yet. Click "Scan DEX Markets" to discover active multi-DEX listings.</td></tr>`;
+  if (!pairs || pairs.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">No pairs found yet. Click "Scan DEX Markets" to discover active multi-DEX listings.</td></tr>`;
     return;
   }
 
   pairs.forEach(p => {
     const tr = document.createElement("tr");
+    const rowId = `row-pair-${(p.symbol || "").replace(/[^a-zA-Z0-9]/g, "_")}-${(p.quoteSymbol || "").replace(/[^a-zA-Z0-9]/g, "_")}`;
+    tr.id = rowId;
 
-    const spreadVal = parseFloat(p.spreadPercent?.replace("%", "") || "0");
-    const spreadClass = spreadVal > 0.5 ? "text-success" : "text-muted";
+    const feeAVal = parseFloat(String(p.poolA?.feePercent || "0.30").replace("%", ""));
+    const feeBVal = parseFloat(String(p.poolB?.feePercent || "0.30").replace("%", ""));
+    const combinedFeeVal = parseFloat(String(p.combinedFeePercent || (feeAVal + feeBVal).toFixed(2)).replace("%", ""));
+    const rawSpreadVal = parseFloat(String(p.spreadPercent || "0").replace("%", ""));
+    const netSpreadVal = parseFloat(String(p.netSpreadPercent || (rawSpreadVal - combinedFeeVal).toFixed(2)).replace("%", ""));
+    const isLoss = netSpreadVal <= 0;
+    const netUsd = (1000 * (netSpreadVal / 100)).toFixed(2);
     const strategyBadge = p.strategy || (p.isSmallPond ? "Small Pond ($2k-$80k)" : "General Pool");
+
+    const decisionText = p.decisionReason || (isLoss
+      ? `Sub-fee loss: DEX fees (${combinedFeeVal.toFixed(2)}%) exceed spread (${rawSpreadVal.toFixed(2)}%). Round-trip loses ${Math.abs(netSpreadVal).toFixed(2)}% (-$${Math.abs(netUsd)} / $1k). Capital protected.`
+      : `Spread exceeds fees. Monitoring optimal block inclusion.`);
 
     tr.innerHTML = `
       <td>
         <strong style="color: #fff;">${p.symbol}</strong> <span style="color: var(--text-muted)">/${p.quoteSymbol}</span>
-        <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono);">${p.tokenAddress.substring(0, 8)}...${p.tokenAddress.substring(36)}</div>
+        <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono);">${(p.tokenAddress || "").substring(0, 8)}...${(p.tokenAddress || "").substring(36)}</div>
       </td>
       <td>
         <span class="badge-pro" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid #a855f7; font-size: 0.68rem;">${strategyBadge}</span>
       </td>
       <td>
-        <div><strong style="text-transform: capitalize;">${p.poolA.dex}</strong></div>
-        <div style="font-size: 0.78rem; color: var(--text-secondary);">$${p.poolA.priceUsd} (Liq: $${Math.round(p.poolA.liquidityUsd).toLocaleString()})</div>
+        <div><strong style="text-transform: capitalize; color: #fff;">${p.poolA.dex}</strong> <span style="font-size: 0.72rem; color: #f87171;">(${feeAVal.toFixed(2)}% fee)</span></div>
+        <div style="font-size: 0.78rem; color: var(--text-secondary);">$${p.poolA.priceUsd} (Liq: $${Math.round(p.poolA.liquidityUsd || 0).toLocaleString()})</div>
       </td>
       <td>
-        <div><strong style="text-transform: capitalize;">${p.poolB.dex}</strong></div>
-        <div style="font-size: 0.78rem; color: var(--text-secondary);">$${p.poolB.priceUsd} (Liq: $${Math.round(p.poolB.liquidityUsd).toLocaleString()})</div>
+        <div><strong style="text-transform: capitalize; color: #fff;">${p.poolB.dex}</strong> <span style="font-size: 0.72rem; color: #f87171;">(${feeBVal.toFixed(2)}% fee)</span></div>
+        <div style="font-size: 0.78rem; color: var(--text-secondary);">$${p.poolB.priceUsd} (Liq: $${Math.round(p.poolB.liquidityUsd || 0).toLocaleString()})</div>
       </td>
       <td>
-        <span class="${spreadClass}" style="font-weight: 700; font-family: var(--font-mono);">${p.spreadPercent}</span>
+        <span class="font-mono" style="font-weight: 700; color: #38bdf8;">${rawSpreadVal.toFixed(2)}%</span>
       </td>
       <td>
-        <span class="badge-pro" style="background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green);">VERIFIED SAFE</span>
+        <span class="font-mono text-danger" style="font-weight: 700;">-${combinedFeeVal.toFixed(2)}%</span>
+        <div style="font-size: 0.7rem; color: var(--text-muted);">${p.poolA.dex} ${feeAVal.toFixed(2)}% + ${p.poolB.dex} ${feeBVal.toFixed(2)}%</div>
+      </td>
+      <td>
+        ${isLoss
+          ? `<span class="badge-pro" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; font-family: var(--font-mono); font-weight: 800;">${netSpreadVal.toFixed(2)}% (LOSS)</span>
+             <div style="font-size: 0.7rem; color: #fca5a5; font-family: var(--font-mono); margin-top: 2px;">-$${Math.abs(netUsd)} / $1k</div>`
+          : `<span class="badge-pro" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid #10b981; font-family: var(--font-mono); font-weight: 800;">+${netSpreadVal.toFixed(2)}% (PROFIT)</span>
+             <div style="font-size: 0.7rem; color: #86efac; font-family: var(--font-mono); margin-top: 2px;">+$${netUsd} / $1k</div>`}
+      </td>
+      <td>
+        ${isLoss
+          ? `<div style="font-size: 0.74rem; line-height: 1.3; max-width: 220px;">
+               <span class="badge-pro" style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); font-size: 0.68rem; display: inline-block; margin-bottom: 2px;">🛡️ REJECTED</span>
+               <div style="color: #fca5a5;">${decisionText}</div>
+             </div>`
+          : `<div style="font-size: 0.74rem; line-height: 1.3; max-width: 220px;">
+               <span class="badge-pro" style="background: rgba(16, 185, 129, 0.15); color: #86efac; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.68rem; display: inline-block; margin-bottom: 2px;">🟢 ACTIVE</span>
+               <div style="color: #86efac;">Net yield profitable. Evaluating on-chain.</div>
+             </div>`}
       </td>
       <td>
         <div style="display: flex; gap: 6px;">
@@ -853,6 +941,88 @@ function renderPairsTable(pairs) {
 
     tbody.appendChild(tr);
   });
+}
+
+function updatePairInDiscoveryAndRadar(pair, timestamp) {
+  if (!pair || !pair.symbol) return;
+
+  // 1. Update in local state.monitoredPairs
+  if (Array.isArray(state.monitoredPairs)) {
+    const idx = state.monitoredPairs.findIndex(
+      p => p.symbol.toLowerCase() === pair.symbol.toLowerCase() &&
+           (p.quoteSymbol || "").toLowerCase() === (pair.quoteSymbol || "").toLowerCase()
+    );
+    if (idx !== -1) {
+      state.monitoredPairs[idx] = { ...state.monitoredPairs[idx], ...pair };
+    }
+  }
+
+  // 2. Update Live Discrepancy Radar Feed card
+  renderOpportunityCard(pair, pair.spreadPercent, timestamp);
+
+  // 3. Update Pair Discovery Table Row in place
+  const rowId = `row-pair-${(pair.symbol || "").replace(/[^a-zA-Z0-9]/g, "_")}-${(pair.quoteSymbol || "").replace(/[^a-zA-Z0-9]/g, "_")}`;
+  const row = document.getElementById(rowId);
+  if (row) {
+    const feeAVal = parseFloat(String(pair.poolA?.feePercent || "0.30").replace("%", ""));
+    const feeBVal = parseFloat(String(pair.poolB?.feePercent || "0.30").replace("%", ""));
+    const combinedFeeVal = parseFloat(String(pair.combinedFeePercent || (feeAVal + feeBVal).toFixed(2)).replace("%", ""));
+    const rawSpreadVal = parseFloat(String(pair.spreadPercent || "0").replace("%", ""));
+    const netSpreadVal = parseFloat(String(pair.netSpreadPercent || (rawSpreadVal - combinedFeeVal).toFixed(2)).replace("%", ""));
+    const isLoss = netSpreadVal <= 0;
+    const netUsd = (1000 * (netSpreadVal / 100)).toFixed(2);
+
+    const decisionText = pair.decisionReason || (isLoss
+      ? `Sub-fee loss: DEX fees (${combinedFeeVal.toFixed(2)}%) exceed spread (${rawSpreadVal.toFixed(2)}%). Round-trip loses ${Math.abs(netSpreadVal).toFixed(2)}% (-$${Math.abs(netUsd)} / $1k). Capital protected.`
+      : `Spread exceeds fees. Monitoring optimal block inclusion.`);
+
+    if (row.children[2] && pair.poolA) {
+      row.children[2].innerHTML = `
+        <div><strong style="text-transform: capitalize; color: #fff;">${pair.poolA.dex}</strong> <span style="font-size: 0.72rem; color: #f87171;">(${feeAVal.toFixed(2)}% fee)</span></div>
+        <div style="font-size: 0.78rem; color: var(--text-secondary);">$${pair.poolA.priceUsd} (Liq: $${Math.round(pair.poolA.liquidityUsd || 0).toLocaleString()})</div>
+      `;
+    }
+
+    if (row.children[3] && pair.poolB) {
+      row.children[3].innerHTML = `
+        <div><strong style="text-transform: capitalize; color: #fff;">${pair.poolB.dex}</strong> <span style="font-size: 0.72rem; color: #f87171;">(${feeBVal.toFixed(2)}% fee)</span></div>
+        <div style="font-size: 0.78rem; color: var(--text-secondary);">$${pair.poolB.priceUsd} (Liq: $${Math.round(pair.poolB.liquidityUsd || 0).toLocaleString()})</div>
+      `;
+    }
+
+    if (row.children[4]) {
+      row.children[4].innerHTML = `
+        <span class="font-mono" style="font-weight: 700; color: #38bdf8;">${rawSpreadVal.toFixed(2)}%</span>
+      `;
+    }
+
+    if (row.children[5]) {
+      row.children[5].innerHTML = `
+        <span class="font-mono text-danger" style="font-weight: 700;">-${combinedFeeVal.toFixed(2)}%</span>
+        <div style="font-size: 0.7rem; color: var(--text-muted);">${pair.poolA?.dex || 'DEX A'} ${feeAVal.toFixed(2)}% + ${pair.poolB?.dex || 'DEX B'} ${feeBVal.toFixed(2)}%</div>
+      `;
+    }
+
+    if (row.children[6]) {
+      row.children[6].innerHTML = isLoss
+        ? `<span class="badge-pro" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; font-family: var(--font-mono); font-weight: 800;">${netSpreadVal.toFixed(2)}% (LOSS)</span>
+           <div style="font-size: 0.7rem; color: #fca5a5; font-family: var(--font-mono); margin-top: 2px;">-$${Math.abs(netUsd)} / $1k</div>`
+        : `<span class="badge-pro" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid #10b981; font-family: var(--font-mono); font-weight: 800;">+${netSpreadVal.toFixed(2)}% (PROFIT)</span>
+           <div style="font-size: 0.7rem; color: #86efac; font-family: var(--font-mono); margin-top: 2px;">+$${netUsd} / $1k</div>`;
+    }
+
+    if (row.children[7]) {
+      row.children[7].innerHTML = isLoss
+        ? `<div style="font-size: 0.74rem; line-height: 1.3; max-width: 220px;">
+             <span class="badge-pro" style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); font-size: 0.68rem; display: inline-block; margin-bottom: 2px;">🛡️ REJECTED</span>
+             <div style="color: #fca5a5;">${decisionText}</div>
+           </div>`
+        : `<div style="font-size: 0.74rem; line-height: 1.3; max-width: 220px;">
+             <span class="badge-pro" style="background: rgba(16, 185, 129, 0.15); color: #86efac; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.68rem; display: inline-block; margin-bottom: 2px;">🟢 ACTIVE</span>
+             <div style="color: #86efac;">Net yield profitable. Evaluating on-chain.</div>
+           </div>`;
+    }
+  }
 }
 
 /* ==========================================================================
@@ -1178,14 +1348,28 @@ const CALC_PRESETS = {
     r1_A: "200000000000000000000000",   // 200,000 USDT (Price: 2,000)
     r0_B: "100000000000000000000",      // 100 WETH
     r1_B: "220000000000000000000000",   // 220,000 USDT (Price: 2,200) -> 10% Spread
+    feeA: "0.30",
+    feeB: "0.30",
     token0Symbol: "WETH",
     token1Symbol: "USDT"
+  },
+  virtual_weth_loss: {
+    r0_A: "2639148000000000000000000",   // VIRTUAL in Aerodrome (Liq $3.47M, price $0.6581)
+    r1_A: "667000000000000000000",       // WETH (at $2,600)
+    r0_B: "988676000000000000000000",    // VIRTUAL in Uniswap (Liq $1.29M, price $0.6530)
+    r1_B: "248000000000000000000",       // WETH -> 0.78% Raw Spread
+    feeA: "1.00",
+    feeB: "0.30",
+    token0Symbol: "VIRTUAL",
+    token1Symbol: "WETH"
   },
   meme_high: {
     r0_A: "50000000000000000000",       // 50 WETH
     r1_A: "100000000000000000000000000",// 100,000,000 MEME
     r0_B: "50000000000000000000",       // 50 WETH
     r1_B: "105000000000000000000000000",// 105,000,000 MEME -> 5% Spread
+    feeA: "0.30",
+    feeB: "0.30",
     token0Symbol: "WETH",
     token1Symbol: "MEME"
   },
@@ -1194,6 +1378,8 @@ const CALC_PRESETS = {
     r1_A: "500000000000000000000000",   // 500k USDT
     r0_B: "500000000000000000000000",   // 500k USDC
     r1_B: "501500000000000000000000",   // 501.5k USDT -> 0.3% Spread
+    feeA: "0.30",
+    feeB: "0.30",
     token0Symbol: "USDC",
     token1Symbol: "USDT"
   }
@@ -1216,6 +1402,10 @@ function initCalculator() {
     document.getElementById("input-r1-A").value = p.r1_A;
     document.getElementById("input-r0-B").value = p.r0_B;
     document.getElementById("input-r1-B").value = p.r1_B;
+    const feeAEl = document.getElementById("input-fee-A");
+    if (feeAEl) feeAEl.value = p.feeA || "0.30";
+    const feeBEl = document.getElementById("input-fee-B");
+    if (feeBEl) feeBEl.value = p.feeB || "0.30";
     computeTradeMath(p.token0Symbol, p.token1Symbol);
   });
 
@@ -1233,6 +1423,10 @@ async function computeTradeMath(token0Symbol = "Token0", token1Symbol = "Token1"
   const r0_B = document.getElementById("input-r0-B").value.trim();
   const r1_B = document.getElementById("input-r1-B").value.trim();
   const tipPercent = parseInt(document.getElementById("input-tip-range").value, 10);
+  const feeAEl = document.getElementById("input-fee-A");
+  const feeBEl = document.getElementById("input-fee-B");
+  const feeBorrowBps = Math.round(parseFloat(feeAEl?.value || "0.30") * 100);
+  const feeTargetBps = Math.round(parseFloat(feeBEl?.value || "0.30") * 100);
 
   try {
     const res = await fetch("/api/calculate", {
@@ -1243,6 +1437,8 @@ async function computeTradeMath(token0Symbol = "Token0", token1Symbol = "Token1"
         r1_A,
         r0_B,
         r1_B,
+        feeBorrowBps,
+        feeTargetBps,
         token0Symbol,
         token1Symbol,
         tipPercent
@@ -1255,26 +1451,49 @@ async function computeTradeMath(token0Symbol = "Token0", token1Symbol = "Token1"
       return;
     }
 
-    document.getElementById("calc-spread-tag").textContent = `Spread: ${data.spreadPercent}`;
-    document.getElementById("res-optimal-borrow").textContent = `${parseFloat(data.optimalBorrow).toFixed(4)} ${data.token0Symbol}`;
-    document.getElementById("res-output-b").textContent = `${parseFloat(data.expectedOutput).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${data.token1Symbol}`;
-    document.getElementById("res-repay-a").textContent = `${parseFloat(data.requiredRepay).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${data.token1Symbol}`;
-    document.getElementById("res-gross-profit").textContent = `+${parseFloat(data.grossProfit).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${data.token1Symbol}`;
-    document.getElementById("res-validator-tip").textContent = `${parseFloat(data.validatorTip).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${data.token1Symbol}`;
-    document.getElementById("res-net-profit").textContent = `+${parseFloat(data.netProfit).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${data.token1Symbol}`;
+    const banner = document.getElementById("calc-rejection-banner");
+    const bannerText = document.getElementById("calc-rejection-text");
 
-    renderCurveTable(data.curvePoints, data.token0Symbol, data.token1Symbol);
+    if (data.isSubFeeLoss || !data.isProfitable) {
+      if (banner && bannerText) {
+        banner.style.display = "block";
+        bannerText.textContent = data.rejectionReason || "Trade rejected: Gross spread is less than combined DEX swap fees. Executing this flash loan guarantees a loss.";
+      }
+      document.getElementById("calc-spread-tag").innerHTML = `Gross Spread: <span style="color:#38bdf8;">${data.spreadPercent}</span> | Combined Fees: <span style="color:#f87171;">-${data.combinedFeePercent}</span> | Net Yield: <span style="color:#f87171; font-weight:800;">${data.netSpreadPercent} (LOSS)</span>`;
+      document.getElementById("res-optimal-borrow").textContent = `${data.optimalBorrow} ${data.token0Symbol}`;
+      document.getElementById("res-output-b").textContent = `${data.expectedOutput} ${data.token1Symbol}`;
+      document.getElementById("res-repay-a").textContent = `${data.requiredRepay} ${data.token1Symbol}`;
+      document.getElementById("res-gross-profit").textContent = data.grossProfit;
+      document.getElementById("res-gross-profit").className = "auto-stat-val text-danger";
+      document.getElementById("res-validator-tip").textContent = `${data.validatorTip} ${data.token1Symbol}`;
+      document.getElementById("res-net-profit").textContent = data.netProfit;
+      document.getElementById("res-net-profit").className = "auto-stat-val text-danger";
+    } else {
+      if (banner) banner.style.display = "none";
+      document.getElementById("calc-spread-tag").innerHTML = `Gross Spread: <span style="color:#38bdf8;">${data.spreadPercent}</span> | Combined Fees: <span style="color:#f87171;">-${data.combinedFeePercent}</span> | Net Yield: <span style="color:#34d399; font-weight:800;">+${data.netSpreadPercent} (PROFIT)</span>`;
+      document.getElementById("res-optimal-borrow").textContent = `${parseFloat(data.optimalBorrow).toFixed(4)} ${data.token0Symbol}`;
+      document.getElementById("res-output-b").textContent = `${parseFloat(data.expectedOutput).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${data.token1Symbol}`;
+      document.getElementById("res-repay-a").textContent = `${parseFloat(data.requiredRepay).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${data.token1Symbol}`;
+      document.getElementById("res-gross-profit").textContent = `+${parseFloat(data.grossProfit).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${data.token1Symbol}`;
+      document.getElementById("res-gross-profit").className = "auto-stat-val text-success";
+      document.getElementById("res-validator-tip").textContent = `${parseFloat(data.validatorTip).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${data.token1Symbol}`;
+      document.getElementById("res-net-profit").textContent = `+${parseFloat(data.netProfit).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${data.token1Symbol}`;
+      document.getElementById("res-net-profit").className = "auto-stat-val text-success";
+    }
+
+    renderCurveTable(data.curvePoints, data.token0Symbol, data.token1Symbol, data.isSubFeeLoss);
   } catch (err) {
     showToast("Calculation failed: " + err.message, "error");
   }
 }
 
-function renderCurveTable(points, t0, t1) {
+function renderCurveTable(points, t0, t1, isSubFeeLoss = false) {
   const tbody = document.getElementById("tbody-curve");
+  if (!tbody) return;
   tbody.innerHTML = "";
 
   if (!points || points.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 16px;">Opportunity is not profitable after 0.3% fees or pool depth insufficient.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 16px;">Opportunity is not profitable after swap fees or pool depth insufficient.</td></tr>`;
     return;
   }
 
@@ -1283,15 +1502,21 @@ function renderCurveTable(points, t0, t1) {
     if (pt.isOptimal) {
       tr.style.backgroundColor = "rgba(16, 185, 129, 0.1)";
       tr.style.fontWeight = "700";
+    } else if (pt.profit < 0) {
+      tr.style.backgroundColor = "rgba(239, 68, 68, 0.05)";
     }
 
     const profitClass = pt.profit > 0 ? "text-success" : "text-danger";
 
+    const statusHtml = pt.profit < 0
+      ? `<span class="badge-pro" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444;">Sub-Fee Loss (-LP Fees)</span>`
+      : (pt.isOptimal ? '<span class="badge-pro">OPTIMAL SIZE</span>' : "Profitable");
+
     tr.innerHTML = `
       <td>${pt.fraction}</td>
       <td class="font-mono">${pt.borrow.toFixed(4)} ${t0}</td>
-      <td class="font-mono ${profitClass}">${pt.profit > 0 ? "+" : ""}${pt.profit.toFixed(2)} ${t1}</td>
-      <td>${pt.isOptimal ? '<span class="badge-pro">OPTIMAL SIZE</span>' : (pt.profit > 0 ? "Profitable" : "Sub-optimal (Slippage Loss)")}</td>
+      <td class="font-mono ${profitClass}">${pt.profit > 0 ? "+" : ""}${pt.profit.toFixed(4)} ${t1}</td>
+      <td>${statusHtml}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -1317,6 +1542,17 @@ function loadPairIntoCalculator(pair) {
   document.getElementById("input-r1-A").value = r1_A;
   document.getElementById("input-r0-B").value = r0_B;
   document.getElementById("input-r1-B").value = r1_B;
+
+  const feeAEl = document.getElementById("input-fee-A");
+  if (feeAEl) {
+    const feeA = parseFloat(String(pair.poolA?.feePercent || "0.30").replace("%", ""));
+    feeAEl.value = isNaN(feeA) ? "0.30" : feeA.toFixed(2);
+  }
+  const feeBEl = document.getElementById("input-fee-B");
+  if (feeBEl) {
+    const feeB = parseFloat(String(pair.poolB?.feePercent || "0.30").replace("%", ""));
+    feeBEl.value = isNaN(feeB) ? "0.30" : feeB.toFixed(2);
+  }
 
   computeTradeMath(pair.symbol, pair.quoteSymbol);
   showToast(`Loaded ${pair.symbol} into Optimizer!`, "success");
