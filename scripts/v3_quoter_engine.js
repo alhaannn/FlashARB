@@ -146,11 +146,8 @@ export class V3QuoterEngine {
     const r1_A = BigInt(v2Pool.reserve1 || v2Pool.r1 || ethers.parseEther("250000"));
     const [reserveOut, reserveIn] = borrowToken0 ? [r0_A, r1_A] : [r1_A, r0_A];
 
-    let low = ethers.parseEther("0.001");
-    let high = ethers.parseEther(maxBorrowEther);
-    if (high >= reserveOut / 2n) {
-      high = reserveOut / 2n;
-    }
+    let low = reserveOut > 100000n ? reserveOut / 100000n : 10n;
+    let high = reserveOut / 3n;
     if (high <= low) return { optimalBorrow: 0n, maxProfit: 0n, isProfitable: false, borrowToken0 };
 
     // Evaluate single trade function
@@ -215,6 +212,199 @@ export class V3QuoterEngine {
       return opt1;
     }
     return opt0;
+  }
+
+  /**
+   * Exact Uniswap V3 core math for exact input swap (Pool B selling)
+   */
+  static getAmountOut(amountIn, sqrtP, L, feeMillionths = 3000, zeroForOne = true) {
+    const feeMultiplier = 1000000n - BigInt(feeMillionths);
+    const amountInWithFee = (amountIn * feeMultiplier) / 1000000n;
+    if (amountInWithFee <= 0n || L <= 0n || sqrtP <= 0n) return 0n;
+
+    if (zeroForOne) {
+      // token0 in, token1 out (price decreases)
+      const numerator = L * sqrtP;
+      const denominator = (L * Q96) + (amountInWithFee * sqrtP);
+      if (denominator <= 0n) return 0n;
+      const sqrtPNext = (numerator * Q96) / denominator;
+      const deltaSqrtP = sqrtP > sqrtPNext ? sqrtP - sqrtPNext : 0n;
+      return (L * deltaSqrtP) / Q96;
+    } else {
+      // token1 in, token0 out (price increases)
+      const deltaSqrtP = (amountInWithFee * Q96) / L;
+      const sqrtPNext = sqrtP + deltaSqrtP;
+      const numerator = L * Q96 * deltaSqrtP;
+      const denominator = sqrtP * sqrtPNext;
+      if (denominator <= 0n) return 0n;
+      return numerator / denominator;
+    }
+  }
+
+  /**
+   * Exact Uniswap V3 core math for exact output flash loan repayment (Pool A borrowing)
+   */
+  static getRequiredRepayment(amountBorrow, sqrtP, L, feeMillionths = 3000, borrowToken0 = true) {
+    const feeMultiplier = 1000000n - BigInt(feeMillionths);
+    if (amountBorrow <= 0n || L <= 0n || sqrtP <= 0n) return 0n;
+
+    if (borrowToken0) {
+      // Borrow token0 -> repay token1 (price increases)
+      const denominator = (L * Q96) - (amountBorrow * sqrtP);
+      if (denominator <= 0n) return -1n;
+      const sqrtPNext = (L * Q96 * sqrtP) / denominator;
+      const deltaSqrtP = sqrtPNext - sqrtP;
+      const deltaY = (L * deltaSqrtP) / Q96;
+      return (deltaY * 1000000n) / feeMultiplier + 1n;
+    } else {
+      // Borrow token1 -> repay token0 (price decreases)
+      const deltaSqrtP = (amountBorrow * Q96) / L;
+      if (deltaSqrtP >= sqrtP) return -1n;
+      const sqrtPNext = sqrtP - deltaSqrtP;
+      const numerator = L * Q96 * deltaSqrtP;
+      const denominator = sqrtP * sqrtPNext;
+      if (denominator <= 0n) return -1n;
+      const deltaX = numerator / denominator;
+      return (deltaX * 1000000n) / feeMultiplier + 1n;
+    }
+  }
+
+  /**
+   * Calculates optimal borrow amount between two Concentrated Liquidity (Uniswap V3 / Slipstream / Pancake V3) pools
+   * Uses convex ternary search solver to maximize net profit after dual-V3 pool fees and price impact
+   */
+  static findOptimalV3ToV3Borrow(v3PoolBorrow, v3PoolTarget, options = {}) {
+    const {
+      feeV3BorrowMillionths = 3000,
+      feeV3TargetMillionths = 3000,
+      borrowToken0 = true
+    } = options;
+
+    const feeBorrow = BigInt(feeV3BorrowMillionths || 3000);
+    const feeTarget = BigInt(feeV3TargetMillionths || 3000);
+
+    const L_Borrow = BigInt(v3PoolBorrow.liquidity || 0);
+    const L_Target = BigInt(v3PoolTarget.liquidity || 0);
+    const sqrtP_Borrow = BigInt(v3PoolBorrow.sqrtPriceX96 || 0);
+    const sqrtP_Target = BigInt(v3PoolTarget.sqrtPriceX96 || 0);
+
+    if (L_Borrow <= 0n || L_Target <= 0n || sqrtP_Borrow <= 0n || sqrtP_Target <= 0n) {
+      return { optimalBorrow: 0n, maxProfit: 0n, isProfitable: false, borrowToken0 };
+    }
+
+    // Dynamically compute capacity bounds based on pool depth
+    let maxCap;
+    if (borrowToken0) {
+      const capBorrow = (L_Borrow * Q96) / sqrtP_Borrow;
+      const capTarget = (L_Target * Q96) / sqrtP_Target;
+      maxCap = capBorrow < capTarget ? capBorrow : capTarget;
+    } else {
+      const capBorrow = (L_Borrow * sqrtP_Borrow) / Q96;
+      const capTarget = (L_Target * sqrtP_Target) / Q96;
+      maxCap = capBorrow < capTarget ? capBorrow : capTarget;
+    }
+
+    if (maxCap <= 1000n) {
+      return { optimalBorrow: 0n, maxProfit: 0n, isProfitable: false, borrowToken0 };
+    }
+
+    let low = maxCap > 100000n ? maxCap / 100000n : 10n;
+    let high = maxCap / 4n; // Safe 25% single-tick pool capacity
+    if (high <= low) {
+      return { optimalBorrow: 0n, maxProfit: 0n, isProfitable: false, borrowToken0 };
+    }
+
+    const evaluateProfit = (borrowAmount) => {
+      if (borrowAmount <= 0n || borrowAmount >= maxCap) return -1n;
+      const requiredRepay = V3QuoterEngine.getRequiredRepayment(borrowAmount, sqrtP_Borrow, L_Borrow, feeBorrow, borrowToken0);
+      if (requiredRepay <= 0n) return -1n;
+
+      const targetOut = V3QuoterEngine.getAmountOut(borrowAmount, sqrtP_Target, L_Target, feeTarget, borrowToken0);
+      if (targetOut <= requiredRepay) return -1n;
+
+      return targetOut - requiredRepay;
+    };
+
+    // 40 iterations of ternary search for exact maximum
+    for (let i = 0; i < 40; i++) {
+      if (high - low < 100n) break;
+      const m1 = low + (high - low) / 3n;
+      const m2 = high - (high - low) / 3n;
+
+      const p1 = evaluateProfit(m1);
+      const p2 = evaluateProfit(m2);
+
+      if (p1 < p2) {
+        low = m1;
+      } else {
+        high = m2;
+      }
+    }
+
+    const optimalBorrow = (low + high) / 2n;
+    const maxProfit = evaluateProfit(optimalBorrow);
+    const isProfitable = maxProfit > 0n;
+
+    return {
+      optimalBorrow: isProfitable ? optimalBorrow : 0n,
+      maxProfit: isProfitable ? maxProfit : 0n,
+      isProfitable,
+      borrowToken0
+    };
+  }
+
+  /**
+   * Evaluates all 4 V3-to-V3 permutations:
+   * 1. Borrow Pool A, target Pool B (borrow Token 0)
+   * 2. Borrow Pool A, target Pool B (borrow Token 1)
+   * 3. Borrow Pool B, target Pool A (borrow Token 0)
+   * 4. Borrow Pool B, target Pool A (borrow Token 1)
+   * Selects the single permutation with highest net profit
+   */
+  static findOptimalV3ToV3BorrowBest(v3PoolA, v3PoolB, options = {}) {
+    const feeA = v3PoolA.feeMillionths || 3000;
+    const feeB = v3PoolB.feeMillionths || 3000;
+
+    const optA0 = V3QuoterEngine.findOptimalV3ToV3Borrow(v3PoolA, v3PoolB, {
+      ...options,
+      feeV3BorrowMillionths: feeA,
+      feeV3TargetMillionths: feeB,
+      borrowToken0: true
+    });
+    const optA1 = V3QuoterEngine.findOptimalV3ToV3Borrow(v3PoolA, v3PoolB, {
+      ...options,
+      feeV3BorrowMillionths: feeA,
+      feeV3TargetMillionths: feeB,
+      borrowToken0: false
+    });
+
+    const optB0 = V3QuoterEngine.findOptimalV3ToV3Borrow(v3PoolB, v3PoolA, {
+      ...options,
+      feeV3BorrowMillionths: feeB,
+      feeV3TargetMillionths: feeA,
+      borrowToken0: true
+    });
+    const optB1 = V3QuoterEngine.findOptimalV3ToV3Borrow(v3PoolB, v3PoolA, {
+      ...options,
+      feeV3BorrowMillionths: feeB,
+      feeV3TargetMillionths: feeA,
+      borrowToken0: false
+    });
+
+    const candidates = [
+      { ...optA0, borrowPool: v3PoolA.address, targetPool: v3PoolB.address, borrowPoolIsA: true },
+      { ...optA1, borrowPool: v3PoolA.address, targetPool: v3PoolB.address, borrowPoolIsA: true },
+      { ...optB0, borrowPool: v3PoolB.address, targetPool: v3PoolA.address, borrowPoolIsA: false },
+      { ...optB1, borrowPool: v3PoolB.address, targetPool: v3PoolA.address, borrowPoolIsA: false }
+    ];
+
+    let best = candidates[0];
+    for (const c of candidates) {
+      if (c.isProfitable && c.maxProfit > best.maxProfit) {
+        best = c;
+      }
+    }
+    return best;
   }
 }
 

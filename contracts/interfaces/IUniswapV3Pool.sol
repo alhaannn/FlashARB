@@ -33,3 +33,12 @@ interface IUniswapV3SwapCallback {
         bytes calldata data
     ) external;
 }
+
+interface IPancakeV3SwapCallback {
+    function pancakeV3SwapCallback(
+        int256 amount0Delta,
+        int256 amount1Delta,
+        bytes calldata data
+    ) external;
+}
+

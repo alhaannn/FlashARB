@@ -595,6 +595,39 @@ async function runAutopilotV3Cycle() {
   }
 }
 
+/**
+ * Estimates USD price of an on-chain token based on known addresses and monitored pair quotes.
+ */
+function estimateTokenUsdPrice(tokenAddress, pair) {
+  if (!tokenAddress) return 1;
+  const addr = tokenAddress.toLowerCase();
+  // WETH
+  if (addr === "0x4200000000000000000000000000000000000006".toLowerCase()) return 3200;
+  // USDC
+  if (addr === "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913".toLowerCase()) return 1;
+  // USDT
+  if (addr === "0xfde4c96c8593536e31f229ea8f37b2ada2699bb2".toLowerCase()) return 1;
+  // cbBTC
+  if (addr === "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf".toLowerCase()) return 68000;
+  // cbETH
+  if (addr === "0x2ae3f1ec7f1f5012cfeab0185bfc7aa3cf0dec22".toLowerCase()) return 3400;
+
+  // Check if token matches currentPair base token
+  if (pair?.tokenAddress && addr === pair.tokenAddress.toLowerCase()) {
+    const p = parseFloat(pair.poolA?.priceUsd || pair.poolB?.priceUsd || "0");
+    if (p > 0) return p;
+  }
+  
+  // Check quoteSymbol
+  const qSym = (pair?.quoteSymbol || "").toUpperCase();
+  if (qSym.includes("BTC")) return 68000;
+  if (qSym.includes("ETH")) return 3200;
+  if (qSym.includes("USD")) return 1;
+
+  const fallbackPrice = parseFloat(pair?.poolA?.priceUsd || pair?.poolB?.priceUsd || "1");
+  return fallbackPrice > 0 ? fallbackPrice : 1;
+}
+
 async function runAutopilotMonitoringCycle() {
   if (!autopilotState.running) return;
   autopilotState.totalCycles++;
@@ -742,10 +775,43 @@ async function runAutopilotMonitoringCycle() {
       ]);
     }
   }
-  // Case 3: Both are Uniswap V3 pools (Flash loan executor borrows from V2 constant-product pools)
+  // Case 3: Both are Uniswap V3 / Slipstream / Pancake V3 pools (Solution 6: V3-to-V3 Concentrated Liquidity Arbitrage)
   else if (poolAInfo.type === "V3" && poolBInfo.type === "V3") {
-    logEvent("AUTOPILOT", "info", `Scanned ${currentPair.symbol}: Both pools are Uniswap V3 (monitoring for cross V2/V3 liquidity updates)`);
-    return;
+    const feeAPct = ((poolAInfo.feeMillionths || 3000) / 10000).toFixed(2);
+    const feeBPct = ((poolBInfo.feeMillionths || 3000) / 10000).toFixed(2);
+    logEvent("AUTOPILOT", "info", `[V3-to-V3] 🔍 Evaluating Concentrated Liquidity for ${currentPair.symbol} | Pool A (${currentPair.poolA.dex}): fee ${feeAPct}%, liq ${poolAInfo.liquidity} | Pool B (${currentPair.poolB.dex}): fee ${feeBPct}%, liq ${poolBInfo.liquidity}`);
+
+    const sizing = V3QuoterEngine.findOptimalV3ToV3BorrowBest(poolAInfo, poolBInfo);
+
+    if (sizing.isProfitable && sizing.maxProfit > 0n) {
+      const borrowToken0 = sizing.borrowToken0;
+      const bPool = sizing.borrowPoolIsA ? poolAInfo : poolBInfo;
+      const tPool = sizing.borrowPoolIsA ? poolBInfo : poolAInfo;
+      const bDex = sizing.borrowPoolIsA ? currentPair.poolA.dex : currentPair.poolB.dex;
+      const tDex = sizing.borrowPoolIsA ? currentPair.poolB.dex : currentPair.poolA.dex;
+
+      routeOpt = {
+        isV3ToV3: true,
+        borrowPool: bPool.address,
+        targetPool: tPool.address,
+        borrowDex: bDex,
+        targetDex: tDex,
+        borrowToken: borrowToken0 ? bPool.token0 : bPool.token1,
+        repayToken: borrowToken0 ? bPool.token1 : bPool.token0,
+        borrowToken0,
+        optimalBorrow: sizing.optimalBorrow,
+        maxProfit: sizing.maxProfit,
+        isProfitable: true
+      };
+
+      [borrowDecimals, repayDecimals] = await Promise.all([
+        getTokenDecimals(routeOpt.borrowToken, provider),
+        getTokenDecimals(routeOpt.repayToken, provider)
+      ]);
+    } else {
+      const totalFeePercent = (((poolAInfo.feeMillionths || 3000) + (poolBInfo.feeMillionths || 3000)) / 10000).toFixed(2);
+      logEvent("AUTOPILOT", "info", `[V3-to-V3] ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex}): Spread within combined pool fees (${totalFeePercent}%) & slippage threshold`);
+    }
   } else {
     logEvent("AUTOPILOT", "info", `Scanned ${currentPair.symbol}: Non-standard pool protocol (${poolAInfo.type}/${poolBInfo.type})`);
     return;
@@ -753,13 +819,11 @@ async function runAutopilotMonitoringCycle() {
 
   // Reject missing, stale, or unprofitable pool routes
   if (!routeOpt || !routeOpt.isProfitable || routeOpt.maxProfit <= 0n) {
-    logEvent("AUTOPILOT", "info", `Scanned ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex}): Spread below profit threshold`);
     return;
   }
 
-  // Calculate actual USD profit using real token decimals
-  const isRepayWeth = (routeOpt.repayToken && routeOpt.repayToken.toLowerCase() === "0x4200000000000000000000000000000000000006".toLowerCase());
-  const quotePriceUsd = isRepayWeth ? 3200 : 1;
+  // Calculate actual USD profit using real token decimals and token USD price
+  const quotePriceUsd = estimateTokenUsdPrice(routeOpt.repayToken, currentPair);
   const profitQuoteUnits = parseFloat(formatTokenUnits(routeOpt.maxProfit, repayDecimals));
   const grossProfitUsd = profitQuoteUnits * quotePriceUsd;
 
@@ -769,8 +833,9 @@ async function runAutopilotMonitoringCycle() {
   if (netProfitUsd > 0.05) {
     autopilotState.opportunitiesDetected++;
     const borrowAmountFormatted = formatTokenUnits(routeOpt.optimalBorrow, borrowDecimals);
-    logEvent("PROFIT", "success", `🔥 PROFITABLE SPREAD CONFIRMED: ${currentPair.symbol} | Borrow on ${routeOpt.borrowPool.substring(0, 8)}... ➔ Target ${routeOpt.targetPool.substring(0, 8)}...`);
-    logEvent("OPTIMIZER", "info", `Optimal Sizing: ${borrowAmountFormatted.substring(0, 8)} ${currentPair.symbol} | Gross: $${grossProfitUsd.toFixed(2)} | Net: +$${netProfitUsd.toFixed(2)} USD`);
+    const routeDesc = routeOpt.borrowDex ? `${routeOpt.borrowDex} ➔ ${routeOpt.targetDex}` : `${routeOpt.borrowPool.substring(0, 8)}... ➔ ${routeOpt.targetPool.substring(0, 8)}...`;
+    logEvent("PROFIT", "success", `🔥 PROFITABLE SPREAD CONFIRMED: ${currentPair.symbol} | Borrow on ${routeDesc}`);
+    logEvent("OPTIMIZER", "info", `Optimal Sizing: ${borrowAmountFormatted.substring(0, 10)} ${currentPair.symbol} (${routeOpt.optimalBorrow.toString()} raw) | Gross: $${grossProfitUsd.toFixed(2)} (${profitQuoteUnits.toFixed(6)} quote) | Net: +$${netProfitUsd.toFixed(2)} USD`);
 
     const privateKey = process.env.PRIVATE_KEY;
     const executorAddress = process.env.EXECUTOR_CONTRACT;
@@ -778,14 +843,20 @@ async function runAutopilotMonitoringCycle() {
 
     let txHash;
     const minProfitRaw = (routeOpt.maxProfit * 90n) / 100n; // 10% slippage buffer
-    const methodName = routeOpt.isV2ToV3 ? "executeV2ToV3FlashArb" : "executeFlashArb";
+    let methodName = "executeFlashArb";
+    if (routeOpt.isV3ToV3) {
+      methodName = "executeV3ToV3FlashArb";
+    } else if (routeOpt.isV2ToV3) {
+      methodName = "executeV2ToV3FlashArb";
+    }
 
     if (isLive) {
-      logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating ${currentPair.symbol} trade off-chain ($0 gas)...`);
+      logEvent("PRE_FLIGHT", "info", `[Pre-Flight Simulation] Validating ${currentPair.symbol} (${methodName}) | Borrow: ${borrowAmountFormatted} | MinProfit: ${formatTokenUnits(minProfitRaw, repayDecimals)} off-chain ($0 gas)...`);
       const signer = new ethers.Wallet(privateKey, provider);
       const EXECUTOR_ABI = [
         "function executeFlashArb(address poolBorrow, address poolTarget, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
         "function executeV2ToV3FlashArb(address poolV2Borrow, address poolV3Target, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
+        "function executeV3ToV3FlashArb(address poolV3Borrow, address poolV3Target, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
         "event ArbitrageExecuted(address indexed poolBorrow, address indexed poolTarget, address indexed profitToken, uint256 profitAmount, uint256 validatorTip)"
       ];
       const contract = new ethers.Contract(executorAddress, EXECUTOR_ABI, signer);
