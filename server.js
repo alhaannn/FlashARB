@@ -87,7 +87,13 @@ export function getProvider(chain = process.env.CHAIN || "base") {
 }
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+app.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
+app.use(express.static(path.join(__dirname, "public"), { etag: false, maxAge: 0 }));
 
 // --- WebSocket Broadcast Utilities ---
 const clients = new Set();
