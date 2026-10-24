@@ -262,7 +262,7 @@ async function runAutopilotDiscoveryCycle() {
   const minLiq = 2000;
   const maxLiq = smallPond ? 80000 : 5000000;
 
-  logEvent("DISCOVERY", "info", `Autopilot starting multi-DEX market scan on ${chain.toUpperCase()} ${smallPond ? "[Solution 4: Small Pond Mode $2k-$80k]" : "[All Pools $2k-$5M]"}...`);
+  logEvent("DISCOVERY", "info", `Autopilot starting multi-DEX market scan on ${chain.toUpperCase()} ${smallPond ? "[Small Pond Mode $2k-$80k]" : "[All Pools $2k-$5M]"}...`);
   autopilotState.currentStatus = `Discovering Pairs on ${chain.toUpperCase()}`;
   broadcast({ type: "autopilot_state", data: autopilotState });
 
@@ -701,21 +701,35 @@ async function evaluateSinglePair(currentPair, chain) {
   let liqA = parseFloat(currentPair.poolA.liquidityUsd);
   let liqB = parseFloat(currentPair.poolB.liquidityUsd);
 
-  // Validate pool addresses (Fix Finding B: TDZ bug elimination)
+  // Validate pool addresses (Fix Finding B: TDZ bug elimination & Uniswap V4 32-byte poolId support)
   if (!currentPair.poolA?.pairAddress || !currentPair.poolB?.pairAddress) {
     return;
   }
-  if (!ethers.isAddress(currentPair.poolA.pairAddress) || !ethers.isAddress(currentPair.poolB.pairAddress)) {
+  const isV4_A = currentPair.poolA.type === "V4" || (typeof currentPair.poolA.pairAddress === "string" && currentPair.poolA.pairAddress.length === 66 && currentPair.poolA.pairAddress.startsWith("0x"));
+  const isV4_B = currentPair.poolB.type === "V4" || (typeof currentPair.poolB.pairAddress === "string" && currentPair.poolB.pairAddress.length === 66 && currentPair.poolB.pairAddress.startsWith("0x"));
+  const isValidPoolA = isV4_A || ethers.isAddress(currentPair.poolA.pairAddress);
+  const isValidPoolB = isV4_B || ethers.isAddress(currentPair.poolB.pairAddress);
+  if (!isValidPoolA || !isValidPoolB) {
     logEvent("AUTOPILOT", "warn", `Invalid pool addresses configured for ${currentPair.symbol}. Skipping.`);
     return;
   }
 
-  const poolAIdentifier = (currentPair.poolA.type === "V4" || (currentPair.poolA.pairAddress && currentPair.poolA.pairAddress.length === 66))
-    ? (currentPair.poolA.poolKey || currentPair.poolA.pairAddress)
+  const poolAIdentifier = isV4_A
+    ? (currentPair.poolA.poolKey || {
+        pairAddress: currentPair.poolA.pairAddress,
+        tokenAddress: currentPair.tokenAddress,
+        quoteSymbol: currentPair.quoteSymbol,
+        type: "V4"
+      })
     : ethers.getAddress(currentPair.poolA.pairAddress);
 
-  const poolBIdentifier = (currentPair.poolB.type === "V4" || (currentPair.poolB.pairAddress && currentPair.poolB.pairAddress.length === 66))
-    ? (currentPair.poolB.poolKey || currentPair.poolB.pairAddress)
+  const poolBIdentifier = isV4_B
+    ? (currentPair.poolB.poolKey || {
+        pairAddress: currentPair.poolB.pairAddress,
+        tokenAddress: currentPair.tokenAddress,
+        quoteSymbol: currentPair.quoteSymbol,
+        type: "V4"
+      })
     : ethers.getAddress(currentPair.poolB.pairAddress);
 
   const provider = getProvider(chain);
@@ -734,6 +748,31 @@ async function evaluateSinglePair(currentPair, chain) {
   } catch (reserveErr) {
     logEvent("AUTOPILOT", "warn", `On-chain pool query failed for ${currentPair.symbol}: ${reserveErr.message}`);
     return; // Fail closed: never label profitable from synthetic reserves
+  }
+
+  if (poolAInfo.type === "UNKNOWN" || poolBInfo.type === "UNKNOWN") {
+    logEvent("AUTOPILOT", "info", `[Unrecognized Pool] ${currentPair.symbol}: Unable to query state on-chain (${poolAInfo.type}/${poolBInfo.type})`);
+    return;
+  }
+
+  // Token contract verification: Prevent fake arbs from DexScreener name collisions
+  const WETH_ADDR = "0x4200000000000000000000000000000000000006".toLowerCase();
+  const ETH0_ADDR = ethers.ZeroAddress.toLowerCase();
+  const normA0 = (poolAInfo.token0 || "").toLowerCase() === ETH0_ADDR ? WETH_ADDR : (poolAInfo.token0 || "").toLowerCase();
+  const normA1 = (poolAInfo.token1 || "").toLowerCase() === ETH0_ADDR ? WETH_ADDR : (poolAInfo.token1 || "").toLowerCase();
+  const normB0 = (poolBInfo.token0 || "").toLowerCase() === ETH0_ADDR ? WETH_ADDR : (poolBInfo.token0 || "").toLowerCase();
+  const normB1 = (poolBInfo.token1 || "").toLowerCase() === ETH0_ADDR ? WETH_ADDR : (poolBInfo.token1 || "").toLowerCase();
+
+  if (normA0 && normA1 && normB0 && normB1) {
+    const setA = new Set([normA0, normA1]);
+    const matchesBoth = setA.has(normB0) && setA.has(normB1);
+    if (!matchesBoth) {
+      currentPair.isProfitable = false;
+      currentPair.decisionReason = `Rejected: Token contract mismatch between pools (Symbol collision). Round-trip trade impossible.`;
+      broadcast({ type: "pair_sync_update", pair: currentPair, timestamp: new Date().toLocaleTimeString() });
+      logEvent("AUTOPILOT", "info", `[Skipped] ${currentPair.symbol}: Mismatched underlying token contracts between pools (Symbol collision / Phantom spread)`);
+      return;
+    }
   }
 
   let feeA_Bps = 30;
@@ -1663,14 +1702,14 @@ app.post("/api/pairs", (req, res) => {
   }
 });
 
-// 6. Manual Trigger Discovery (Solution 4 Small Pond Mode Enabled)
+// 6. Manual Trigger Discovery (All Pools $2k - $5M by default)
 app.post("/api/discover", async (req, res) => {
   const chain = req.body.chain || process.env.CHAIN || "base";
-  const smallPond = req.body.smallPond !== false;
+  const smallPond = req.body.smallPond === true;
   const minLiq = parseFloat(req.body.minLiquidity || "2000");
   const maxLiq = parseFloat(req.body.maxLiquidity || (smallPond ? "80000" : "5000000"));
 
-  logEvent("DISCOVERY", "info", `Manual discovery triggered on: [${chain.toUpperCase()}] ${smallPond ? "[Solution 4: Small Pond Mode $2k-$80k]" : ""}`);
+  logEvent("DISCOVERY", "info", `Manual discovery triggered on: [${chain.toUpperCase()}] ${smallPond ? "[Small Pond Mode $2k-$80k]" : "[All Pools $2k-$5M]"}`);
 
   try {
     const candidates = await findArbitrageCandidates(chain, minLiq, maxLiq, smallPond);

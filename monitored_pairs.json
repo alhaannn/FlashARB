@@ -4,7 +4,7 @@
     "tokenAddress": "0xcbd06e5a2b0c65597161de254aa074e489deb510",
     "quoteSymbol": "WETH",
     "spreadPercent": "1.36%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "strategy": "Full Market Depth (-)",
     "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
@@ -34,7 +34,7 @@
     "tokenAddress": "0xac1bd2486aaf3b5c0fc3fd868558b082a531b2b4",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.81%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "strategy": "Full Market Depth (-)",
     "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
@@ -64,7 +64,7 @@
     "tokenAddress": "0xb2000000000000000000008501b13360000cb2ec",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.78%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "strategy": "Full Market Depth (-)",
     "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
@@ -184,7 +184,7 @@
     "tokenAddress": "0x4ed4e862860bed51a9570b96d89af5e1b0efefed",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.27%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "strategy": "Full Market Depth (-)",
     "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
@@ -214,7 +214,7 @@
     "tokenAddress": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
     "quoteSymbol": "CBBTC",
     "spreadPercent": "0.19%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "strategy": "Full Market Depth (-)",
     "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
@@ -274,7 +274,7 @@
     "tokenAddress": "0xb2000000000000000000004c27f6523082f41d01",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.16%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "strategy": "Full Market Depth (-)",
     "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
@@ -304,7 +304,7 @@
     "tokenAddress": "0x9a26f5433671751c3276a065f57e5a02d2817973",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.13%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "strategy": "Full Market Depth (-)",
     "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
@@ -394,7 +394,7 @@
     "tokenAddress": "0xb1a03eda10342529bbf8eb700a06c60441fef25d",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.07%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "strategy": "Full Market Depth (-)",
     "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
@@ -454,7 +454,7 @@
     "tokenAddress": "0x311935cd80b76769bf2ecc9d8ab7635b2139cf82",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.03%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "strategy": "Full Market Depth (-)",
     "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
@@ -484,7 +484,7 @@
     "tokenAddress": "0x311935cd80b76769bf2ecc9d8ab7635b2139cf82",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.00%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "strategy": "Full Market Depth (-)",
     "isSmallPond": false,
     "poolA": {
       "dex": "pancakeswap",
@@ -514,7 +514,7 @@
     "tokenAddress": "0xcb585250f852c6c6bf90434ab21a00f02833a4af",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.00%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "strategy": "Full Market Depth (-)",
     "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
@@ -544,7 +544,7 @@
     "tokenAddress": "0xcb585250f852c6c6bf90434ab21a00f02833a4af",
     "quoteSymbol": "CBBTC",
     "spreadPercent": "0.00%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
+    "strategy": "Full Market Depth (-)",
     "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
@@ -602,8 +602,8 @@
     "tokenAddress": "0x29cC30f9D113B356Ce408667aa6433589CeCBDcA",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.85%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "pancakeswap",
       "pairAddress": "0x83f3ACa29Bc79B048B99C56013475570acc97ccF",
@@ -658,8 +658,8 @@
     "tokenAddress": "0x9d0E8f5b25384C7310CB8C6aE32C8fbeb645d083",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.08%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0xaC4e562d7C6108f971321F14238E24AE2cC398ac",
@@ -714,8 +714,8 @@
     "tokenAddress": "0x1111111111166b7FE7bd91427724B487980aFc69",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.06%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0xEdc625B74537eE3a10874f53D170E9c17A906B9c",
@@ -742,8 +742,8 @@
     "tokenAddress": "0xE0Cd4cAcDdcBF4f36e845407CE53E87717b6601d",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.00%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0x9331F571F79d1E186a095C93756b5680a43932AC",
@@ -770,8 +770,8 @@
     "tokenAddress": "0xFb31f85A8367210B2e4Ed2360D2dA9Dc2D2Ccc95",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.03%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0x566beE7EF7b39f29d150AB3be6b6242C17CC5A31",
@@ -798,8 +798,8 @@
     "tokenAddress": "0x3ec2156D4c0A9CBdAB4a016633b7BcF6a8d68Ea2",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.69%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0x5116773e18A9C7bB03EBB961b38678E45E238923",
@@ -826,8 +826,8 @@
     "tokenAddress": "0x5aB3D4c385B400F3aBB49e80DE2fAF6a88A7B691",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.19%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0x7AF45dfaF2fDEA139B2295f37fFea2E16e6Fd8BA",
@@ -854,8 +854,8 @@
     "tokenAddress": "0xF1070Fd43cd11Af8dA18fF4EDFb1A18279CD6F67",
     "quoteSymbol": "VIRTUAL",
     "spreadPercent": "1.34%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0x5fF9912F6b7ee031d6e25A03C874a9102814C60C",
@@ -882,8 +882,8 @@
     "tokenAddress": "0x6985884C4392D348587B19cb9eAAf157F13271cd",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.00%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0x0f21A72A02DC78217c2987826D061500AECF7707",
@@ -910,8 +910,8 @@
     "tokenAddress": "0x409e79C96389C00Fb5a46586acE2615c6d09C76e",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.01%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0xBc1845822894fBA85A74B6a334c760aEFDceB23C",
@@ -938,8 +938,8 @@
     "tokenAddress": "0x0C03Ce270B4826Ec62e7DD007f0B716068639F7B",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.12%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0x5280d5E63b416277d0F81FAe54Bb1e0444cAbDAA",
@@ -966,8 +966,8 @@
     "tokenAddress": "0x4F9Fd6Be4a90f2620860d680c0d4d5Fb53d1A825",
     "quoteSymbol": "VIRTUAL",
     "spreadPercent": "0.42%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0x7464850CC1cFb54A2223229b77B1BCA2f888D946",
@@ -994,8 +994,8 @@
     "tokenAddress": "0x6921B130D297cc43754afba22e5EAc0FBf8Db75b",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.24%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0xADE9BcD4b968EE26Bed102dd43A55f6A8c2416df",
@@ -1022,8 +1022,8 @@
     "tokenAddress": "0x4CD9a847f39106E19A4E41Aea8a232E915C82aF5",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.11%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0xD76D44875716a708DBd55cd8Ffc3eb1f94aCBCe3",
@@ -1078,8 +1078,8 @@
     "tokenAddress": "0x50dA645f148798F68EF2d7dB7C1CB22A6819bb2C",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.17%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0xe96a4E9EA3a2C6Db214174738a19Eb7Dbb8A3069",
@@ -1106,8 +1106,8 @@
     "tokenAddress": "0x0d97F261b1e88845184f678e2d1e7a98D9FD38dE",
     "quoteSymbol": "WETH",
     "spreadPercent": "1.38%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "sushiswap",
       "pairAddress": "0xF65BB528cED09008603509c3fDa43e1cCfdDF935",
@@ -1134,8 +1134,8 @@
     "tokenAddress": "0xb200000000000000000000C2e324d24d7eEcd1fb",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.06%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0xF5FCB9CDAFcE67d50AfEf298F88E709d2B946BA6",
@@ -1155,15 +1155,15 @@
     "combinedFeePercent": "0.32%",
     "netSpreadPercent": "-0.25%",
     "isProfitable": false,
-    "decisionReason": "Sub-fee loss: Gross spread (0.06%) is less than DEX swap fees (0.32%: aerodrome 0.01% + uniswap 0.30%). Round-trip would lose 0.25%. Capital protected."
+    "decisionReason": "Rejected: Underlying token contract mismatch between pools (Name collision / Phantom spread). Trade rejected to protect capital."
   },
   {
     "symbol": "COOKIE",
     "tokenAddress": "0xC0041EF357B183448B235a8Ea73Ce4E4eC8c265F",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.71%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0x17EA71d7E2dFb58F6b7e95C2ddDAD863E225091c",
@@ -1190,8 +1190,8 @@
     "tokenAddress": "0x767A739D1A152639e9Ea1D8c1BD55FDC5B217D7f",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.63%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0xf207d02BECD4417aAA3383804b6B87b17602c86D",
@@ -1218,8 +1218,8 @@
     "tokenAddress": "0xb8D98a102b0079B69FFbc760C8d857A31653e56e",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.46%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "sushiswap",
       "pairAddress": "0xfE83058F06869da5d70a1355dCA64C873480ab1d",
@@ -1246,8 +1246,8 @@
     "tokenAddress": "0xacfE6019Ed1A7Dc6f7B508C02d1b04ec88cC21bf",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.04%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0x67A11022B7B6ed66f81233F6C8Ed6e48F7826530",
@@ -1259,7 +1259,13 @@
     "poolB": {
       "dex": "uniswap-v4",
       "pairAddress": "0x363fe74e05aa32b2cf6fe11e632cae4eabc9238c09d3ca626ef3afd414e2944e",
-      "poolKey": null,
+      "poolKey": {
+        "currency0": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "currency1": "0xacfE6019Ed1A7Dc6f7B508C02d1b04ec88cC21bf",
+        "fee": 3000,
+        "tickSpacing": 60,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
       "priceUsd": "23.42",
       "liquidityUsd": 64433.67,
       "feePercent": "0.30%",
@@ -1304,8 +1310,8 @@
     "tokenAddress": "0xBAa5CC21fd487B8Fcc2F632f3F4E8D37262a0842",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.47%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0x2043B296fFC6b2d3bf4A3F3167d2Afb3B0FBdbEE",
@@ -1317,7 +1323,13 @@
     "poolB": {
       "dex": "uniswap-v4",
       "pairAddress": "0x0b5801d76420450270ae80476bb57091a23969ef4c05f4f9441547d09e96c83b",
-      "poolKey": null,
+      "poolKey": {
+        "currency0": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "currency1": "0xBAa5CC21fd487B8Fcc2F632f3F4E8D37262a0842",
+        "fee": 10000,
+        "tickSpacing": 200,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
       "priceUsd": "2.12",
       "liquidityUsd": 26854.37,
       "feePercent": "0.30%",
@@ -1333,8 +1345,8 @@
     "tokenAddress": "0x1111111111166b7FE7bd91427724B487980aFc69",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.06%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0xA0Ca5bEbC42cDbf3623B1C09206Ae4e3975B0FC7",
@@ -1361,12 +1373,18 @@
     "tokenAddress": "0x61450047686aa0405584ED28d836EF28aeEFA5EC",
     "quoteSymbol": "WETH",
     "spreadPercent": "257.28%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap-v4",
       "pairAddress": "0x12a4ab512419639133e1ed19ed332a26fca03e0e10b59ad489fd394dc70b03fa",
-      "poolKey": null,
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x61450047686aa0405584ED28d836EF28aeEFA5EC",
+        "fee": 10000,
+        "tickSpacing": 200,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
       "priceUsd": "0.0004834",
       "liquidityUsd": 386783.56,
       "feePercent": "0.30%",
@@ -1382,16 +1400,16 @@
     },
     "combinedFeePercent": "1.30%",
     "netSpreadPercent": "+255.98%",
-    "isProfitable": true,
-    "decisionReason": "Verified safe candidate: Gross spread (257.28%) exceeds true LP fees (1.30%). Ready for sizing optimization."
+    "isProfitable": false,
+    "decisionReason": "Rejected: Underlying token contract mismatch between pools (Name collision / Phantom spread). Trade rejected to protect capital."
   },
   {
     "symbol": "CBXRP",
     "tokenAddress": "0xcb585250f852C6c6bf90434AB21A00f02833a4af",
     "quoteSymbol": "USDC",
     "spreadPercent": "107316.88%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "pancakeswap",
       "pairAddress": "0xaAbA8e9c7038a9E1224Bb51150546242A1f64E5C",
@@ -1410,16 +1428,16 @@
     },
     "combinedFeePercent": "1.01%",
     "netSpreadPercent": "+107315.87%",
-    "isProfitable": true,
-    "decisionReason": "Verified safe candidate: Gross spread (107316.88%) exceeds true LP fees (1.01%). Ready for sizing optimization."
+    "isProfitable": false,
+    "decisionReason": "Rejected: Underlying token contract mismatch between pools (Name collision / Phantom spread). Trade rejected to protect capital."
   },
   {
     "symbol": "NOCK",
     "tokenAddress": "0x9B5E262cF9bb04869ab40b19AF91D2dc85761722",
     "quoteSymbol": "USDC",
     "spreadPercent": "1.15%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0x85f1Aa3a70fEdd1C52705c15BAEd143e675CD626",
@@ -1447,8 +1465,8 @@
     "tokenAddress": "0xB200000000000000000000cFbdF64a8706a94a01",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.47%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap-v4",
       "pairAddress": "0x4b095f294d8efca4b50b948865e68262025a68ba80e759b5b75cddb995c6b43f",
@@ -1476,8 +1494,8 @@
     "tokenAddress": "0x5aB3D4c385B400F3aBB49e80DE2fAF6a88A7B691",
     "quoteSymbol": "WETH",
     "spreadPercent": "2.95%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0x15aEda0387EBeF5Fd8300560010De83780477147",
@@ -1504,8 +1522,8 @@
     "tokenAddress": "0x21CFCFc3d8F98fC728f48341D10Ad8283F6EB7AB",
     "quoteSymbol": "WETH",
     "spreadPercent": "5.28%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0x1FAE246b1b2D0ce47126bBb109850Da355352D77",
@@ -1533,8 +1551,8 @@
     "tokenAddress": "0xEF5997c2cf2f6c138196f8A6203afc335206b3c1",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.30%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0x995985C9027E8a90C823a5E0a9112Fea72d1F4DD",
@@ -1561,8 +1579,8 @@
     "tokenAddress": "0x1bc0c42215582d5A085795f4baDbaC3ff36d1Bcb",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.08%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0xC1a6FBeDAe68E1472DbB91FE29B51F7a0Bd44F97",
@@ -1589,8 +1607,8 @@
     "tokenAddress": "0xB166E8B140D35D9D8226E40C09f757BAC5A4d87d",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.65%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0x3F413FcCAEa59b8053d605AEa7ae847C02ed5D95",
@@ -1617,8 +1635,8 @@
     "tokenAddress": "0x22aF33FE49fD1Fa80c7149773dDe5890D3c76F3b",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.22%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0xAEC085E5A5CE8d96A7bDd3eB3A62445d4f6CE703",
@@ -1645,8 +1663,8 @@
     "tokenAddress": "0xB2000000000000000000004c27f6523082f41D01",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.14%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0x22906596Bd81F53f01d700DdBdB3935baC2E1446",
@@ -1702,8 +1720,8 @@
     "tokenAddress": "0xb2000000000000000000002D0BA3164cc74f58B7",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.02%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0x16c70F04C3080a127486Cdf5a4C33c066bBF47C3",
@@ -1730,8 +1748,8 @@
     "tokenAddress": "0x940A319B75861014A220D9c6c144d108552B089B",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.29%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0x58dBa34e6ee6eb76Ef71A6ca0f18871CAE817D3b",
@@ -1759,8 +1777,8 @@
     "tokenAddress": "0x5F980Dcfc4c0fa3911554cf5ab288ed0eb13DBa3",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.42%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap-v4",
       "pairAddress": "0xec33256bf1ded407a57fd3c1965e7556e42ac14db09bc4e6fef57d5e2eb0b0b9",
@@ -1788,8 +1806,8 @@
     "tokenAddress": "0x6985884C4392D348587B19cb9eAAf157F13271cd",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.60%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap-v4",
       "pairAddress": "0x83f95026fb17cbb252b5861baca45b1ef6b175e9b494250cc1202655431987c9",
@@ -1817,8 +1835,8 @@
     "tokenAddress": "0xf1e9Baa65d418A9025e1851DD2D37f1AD208bba3",
     "quoteSymbol": "WETH",
     "spreadPercent": "10.46%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap-v4",
       "pairAddress": "0x5e9782079683037fc8bb57625683359d9efaef80f2b829c4bb5b1896c6bb40b6",
@@ -1846,8 +1864,8 @@
     "tokenAddress": "0x50F88fe97f72CD3E75b9Eb4f747F59BcEBA80d59",
     "quoteSymbol": "WETH",
     "spreadPercent": "15318.87%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap-v4",
       "pairAddress": "0x825436e7f585febb1b201e48428b226015fcfb71e840a27373d3ddea2271fd84",
@@ -1867,16 +1885,16 @@
     },
     "combinedFeePercent": "0.55%",
     "netSpreadPercent": "+15318.32%",
-    "isProfitable": true,
-    "decisionReason": "Verified safe candidate: Gross spread (15318.87%) exceeds true LP fees (0.55%). Ready for sizing optimization."
+    "isProfitable": false,
+    "decisionReason": "Rejected: Underlying token contract mismatch between pools (Name collision / Phantom spread). Trade rejected to protect capital."
   },
   {
     "symbol": "AAPLC",
     "tokenAddress": "0xb200000000000000000000C2e324d24d7eEcd1fb",
     "quoteSymbol": "WETH",
     "spreadPercent": "1443768136.77%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0xBc9050D78d2D8d88F7536AF49d4007aEf469d7B4",
@@ -1896,16 +1914,16 @@
     },
     "combinedFeePercent": "0.35%",
     "netSpreadPercent": "+1443768136.42%",
-    "isProfitable": true,
-    "decisionReason": "Verified safe candidate: Gross spread (1443768136.77%) exceeds true LP fees (0.35%). Ready for sizing optimization."
+    "isProfitable": false,
+    "decisionReason": "Rejected: Underlying token contract mismatch between pools (Name collision / Phantom spread). Trade rejected to protect capital."
   },
   {
     "symbol": "CBDOGE",
     "tokenAddress": "0xcbD06E5A2B0C65597161de254AA074E489dEb510",
     "quoteSymbol": "CBBTC",
     "spreadPercent": "0.03%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0x363d1607b8DA83d6B6EA76D017CeEcf1316BB08A",
@@ -1933,8 +1951,8 @@
     "tokenAddress": "0x0b2558bdBC7FFEC0f327fB3579c23daBD1699706",
     "quoteSymbol": "USDC",
     "spreadPercent": "0.29%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap-v4",
       "pairAddress": "0x0fbcaaf346e1b812a63b2cf196841ed7664ae1d4fa3e9fd93b29266801c15f44",
@@ -1962,8 +1980,8 @@
     "tokenAddress": "0xB2000000000000000000007BF6D5cBb0E24cB301",
     "quoteSymbol": "WETH",
     "spreadPercent": "42.17%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap",
       "pairAddress": "0xE10Cf6788ab478060629aF61Ac13D3a40259005E",
@@ -1991,8 +2009,8 @@
     "tokenAddress": "0x00309D634d11541b857f927BE91aD2f0bD78894c",
     "quoteSymbol": "WETH",
     "spreadPercent": "0.08%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0x70fd35ad3e981cB924560737A83EC99bf5796bA2",
@@ -2019,8 +2037,8 @@
     "tokenAddress": "0x78b3C724A2F663D11373C4a1978689271895256f",
     "quoteSymbol": "WETH",
     "spreadPercent": "528835.65%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "aerodrome",
       "pairAddress": "0x1a9f461a371559f82976fa18C46A6A0d29f131d0",
@@ -2040,16 +2058,16 @@
     },
     "combinedFeePercent": "1.30%",
     "netSpreadPercent": "+528834.35%",
-    "isProfitable": true,
-    "decisionReason": "Verified safe candidate: Gross spread (528835.65%) exceeds true LP fees (1.30%). Ready for sizing optimization."
+    "isProfitable": false,
+    "decisionReason": "Rejected: Underlying token contract mismatch between pools (Name collision / Phantom spread). Trade rejected to protect capital."
   },
   {
     "symbol": "MOLT",
     "tokenAddress": "0xB695559b26BB2c9703ef1935c37AeaE9526bab07",
     "quoteSymbol": "WETH",
     "spreadPercent": "1.79%",
-    "strategy": "Volatile Memecoin Sweet Spot ($2k-$150k)",
-    "isSmallPond": true,
+    "strategy": "Full Market Depth (-)",
+    "isSmallPond": false,
     "poolA": {
       "dex": "uniswap-v4",
       "pairAddress": "0x15f351bf1637b43d70631ba95fb9bbb1ff21761c29b034c1b380aecb922464dd",

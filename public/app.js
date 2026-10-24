@@ -988,10 +988,10 @@ function initDiscovery() {
     chkSmallPond.addEventListener("change", () => {
       if (chkSmallPond.checked) {
         inputMaxLiq.value = 80000;
-        showToast("Solution 4: Small Pond Mode active ($2k - $80k).", "info");
+        showToast("Small Pond Mode active ($2k - $80k).", "info");
       } else {
         inputMaxLiq.value = 5000000;
-        showToast("General Mode active: Scanning up to $5M liquidity.", "info");
+        showToast("Full Market Mode active: Scanning all pools up to $5M liquidity.", "info");
       }
     });
   }
@@ -1001,7 +1001,7 @@ function initDiscovery() {
       if (chkSmallPond) chkSmallPond.checked = true;
       inputMinLiq.value = 2000;
       inputMaxLiq.value = 80000;
-      showToast("Applied Small Pond Preset ($2,000 - $80,000)", "success");
+      showToast("Applied Small Pond Preset ($2,000 - $80,000)", "info");
     });
   }
 
@@ -1010,15 +1010,15 @@ function initDiscovery() {
       if (chkSmallPond) chkSmallPond.checked = false;
       inputMinLiq.value = 2000;
       inputMaxLiq.value = 5000000;
-      showToast("Applied All Liquidity Preset ($2,000 - $5,000,000)", "info");
+      showToast("Applied All Liquidity Preset ($2,000 - $5,000,000)", "success");
     });
   }
 
   btnRunDisc.addEventListener("click", async () => {
     const chain = document.getElementById("select-disc-chain").value;
-    const minLiquidity = inputMinLiq.value;
-    const maxLiquidity = inputMaxLiq.value;
-    const smallPond = chkSmallPond ? chkSmallPond.checked : true;
+    const minLiquidity = inputMinLiq.value || "2000";
+    const maxLiquidity = inputMaxLiq.value || "5000000";
+    const smallPond = chkSmallPond ? chkSmallPond.checked : false;
 
     btnRunDisc.disabled = true;
     document.getElementById("btn-run-disc-text").textContent = "Scanning DexScreener...";

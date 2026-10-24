@@ -70,7 +70,7 @@ export async function resolveBorrowToken0(poolAddress, tokenAddress, provider, c
  * @returns {Promise<number>}
  */
 export async function getTokenDecimals(tokenAddress, provider) {
-  if (!tokenAddress || !ethers.isAddress(tokenAddress)) {
+  if (!tokenAddress || tokenAddress === ethers.ZeroAddress || tokenAddress === "0x0000000000000000000000000000000000000000" || !ethers.isAddress(tokenAddress)) {
     return 18;
   }
 
@@ -174,6 +174,58 @@ export async function getV4PoolProtocolInfo(poolKeyOrId, provider, poolManagerAd
         [poolKey.currency0, poolKey.currency1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks]
       );
       poolId = ethers.keccak256(encoded);
+    } else if (poolId && (poolKeyOrId.tokenAddress || poolKeyOrId.token0)) {
+      // Attempt zero-hook PoolKey derivation across common fee tiers
+      const tokenA = poolKeyOrId.tokenAddress || poolKeyOrId.token0;
+      let tokenB = poolKeyOrId.quoteAddress || poolKeyOrId.token1;
+      if (!tokenB && poolKeyOrId.quoteSymbol) {
+        if (poolKeyOrId.quoteSymbol === "USDC") tokenB = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+        else if (poolKeyOrId.quoteSymbol === "CBBTC") tokenB = "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf";
+        else tokenB = "0x4200000000000000000000000000000000000006";
+      }
+      if (tokenA && tokenB) {
+        const quoteCandidates = [tokenB];
+        if (poolKeyOrId.quoteSymbol === "WETH" || tokenB.toLowerCase() === "0x4200000000000000000000000000000000000006".toLowerCase()) {
+          quoteCandidates.push(ethers.ZeroAddress);
+        }
+        const commonTiers = [
+          { fee: 100, tickSpacing: 1 },
+          { fee: 500, tickSpacing: 10 },
+          { fee: 3000, tickSpacing: 60 },
+          { fee: 10000, tickSpacing: 200 },
+          { fee: 3000, tickSpacing: 10 },
+          { fee: 3000, tickSpacing: 1 },
+          { fee: 500, tickSpacing: 1 },
+          { fee: 500, tickSpacing: 60 },
+          { fee: 10000, tickSpacing: 60 }
+        ];
+        const abiCoder = new ethers.AbiCoder();
+        for (const qCand of quoteCandidates) {
+          let c0 = tokenA;
+          let c1 = qCand;
+          if (BigInt(c0) > BigInt(c1)) {
+            c0 = qCand;
+            c1 = tokenA;
+          }
+          for (const ft of commonTiers) {
+            const encoded = abiCoder.encode(
+              ["address", "address", "uint24", "int24", "address"],
+              [c0, c1, ft.fee, ft.tickSpacing, ethers.ZeroAddress]
+            );
+            if (ethers.keccak256(encoded).toLowerCase() === poolId.toLowerCase()) {
+              poolKey = {
+                currency0: c0,
+                currency1: c1,
+                fee: ft.fee,
+                tickSpacing: ft.tickSpacing,
+                hooks: ethers.ZeroAddress
+              };
+              break;
+            }
+          }
+          if (poolKey) break;
+        }
+      }
     }
   }
 
@@ -207,8 +259,8 @@ export async function getV4PoolProtocolInfo(poolKeyOrId, provider, poolManagerAd
       poolId,
       poolKey,
       address: poolManagerAddress,
-      token0: poolKey ? poolKey.currency0 : undefined,
-      token1: poolKey ? poolKey.currency1 : undefined,
+      token0: poolKey ? poolKey.currency0 : (poolKeyOrId?.token0 || poolKeyOrId?.tokenAddress || undefined),
+      token1: poolKey ? poolKey.currency1 : (poolKeyOrId?.token1 || poolKeyOrId?.quoteAddress || undefined),
       sqrtPriceX96,
       tick,
       liquidity,

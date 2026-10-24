@@ -112,36 +112,46 @@ async function main() {
         continue;
       }
 
-      const tokenAddress = basePools[0].baseToken.address;
-
-      // Group pools by normalized quote token (e.g. WETH, USDC)
-      const quoteGroups = new Map();
+      // Group pools by exact base token address to prevent pairing different tokens that share the same ticker symbol
+      const tokenAddressGroups = new Map();
       for (const pool of basePools) {
-        const qSym = normalizeQuote(pool.quoteToken?.symbol);
-        if (!quoteGroups.has(qSym)) quoteGroups.set(qSym, []);
-        quoteGroups.get(qSym).push(pool);
+        const bAddr = (pool.baseToken?.address || "").toLowerCase();
+        if (!bAddr) continue;
+        if (!tokenAddressGroups.has(bAddr)) tokenAddressGroups.set(bAddr, []);
+        tokenAddressGroups.get(bAddr).push(pool);
       }
 
-      for (const [quoteSym, sameQuotePools] of quoteGroups.entries()) {
-        const pairKey = `${sym}/${quoteSym}`;
-        if (existingSymbols.has(pairKey)) {
-          console.log(`  ℹ ${pairKey} already in monitored list. Skipping.`);
-          continue;
+      for (const [tokenAddress, tokenPools] of tokenAddressGroups.entries()) {
+        if (tokenPools.length < 2) continue;
+
+        // Group pools by normalized quote token (e.g. WETH, USDC)
+        const quoteGroups = new Map();
+        for (const pool of tokenPools) {
+          const qSym = normalizeQuote(pool.quoteToken?.symbol);
+          if (!quoteGroups.has(qSym)) quoteGroups.set(qSym, []);
+          quoteGroups.get(qSym).push(pool);
         }
 
-        // Find at least 2 pools on different DEXes (distinguish Uniswap V4 from V3/V2)
-        const uniqueDexMap = new Map();
-        for (const p of sameQuotePools) {
-          const isV4 = p.labels?.includes("v4") || (p.pairAddress && p.pairAddress.length === 66);
-          const normDex = isV4 ? "uniswap-v4" : normalizeDex(p.dexId);
-          if (!uniqueDexMap.has(normDex)) {
-            uniqueDexMap.set(normDex, p);
+        for (const [quoteSym, sameQuotePools] of quoteGroups.entries()) {
+          const pairKey = `${sym}/${quoteSym}`;
+          if (existingSymbols.has(pairKey)) {
+            console.log(`  ℹ ${pairKey} already in monitored list. Skipping.`);
+            continue;
           }
-        }
 
-        if (uniqueDexMap.size < 2) {
-          continue;
-        }
+          // Find at least 2 pools on different DEXes (distinguish Uniswap V4 from V3/V2)
+          const uniqueDexMap = new Map();
+          for (const p of sameQuotePools) {
+            const isV4 = p.labels?.includes("v4") || (p.pairAddress && p.pairAddress.length === 66);
+            const normDex = isV4 ? "uniswap-v4" : normalizeDex(p.dexId);
+            if (!uniqueDexMap.has(normDex)) {
+              uniqueDexMap.set(normDex, p);
+            }
+          }
+
+          if (uniqueDexMap.size < 2) {
+            continue;
+          }
 
         const dexList = Array.from(uniqueDexMap.values()).sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
         const poolA_Cand = dexList[0];
@@ -232,7 +242,9 @@ async function main() {
         existingSymbols.add(pairKey);
         break; // Keep best quote pair per symbol to prevent duplicates
       }
-    } catch (err) {
+      break;
+    }
+  } catch (err) {
       console.warn(`Error auditing ${sym}:`, err.message);
     }
   }

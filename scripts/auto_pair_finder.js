@@ -158,8 +158,8 @@ const BASE_SEPOLIA_TESTNET_CANDIDATES = [
 export async function findArbitrageCandidates(
   chain = CHAIN,
   minLiq = DEFAULT_MIN_LIQ,
-  maxLiq = DEFAULT_MAX_LIQ_SMALL_POND,
-  smallPondMode = true
+  maxLiq = DEFAULT_MAX_LIQ_GENERAL,
+  smallPondMode = false
 ) {
   const actualMaxLiq = smallPondMode ? Math.min(maxLiq, DEFAULT_MAX_LIQ_SMALL_POND) : maxLiq;
   const isTestnet = chain.toLowerCase().includes("sepolia") || chain.toLowerCase().includes("testnet");
@@ -169,6 +169,9 @@ export async function findArbitrageCandidates(
   if (smallPondMode) {
     console.log(`     🎯 Strategy: SMALL POND SWEET SPOT ($${minLiq.toLocaleString()} - $${actualMaxLiq.toLocaleString()})     `);
     console.log(`     Filtering out institutional mega-caps to avoid latency wars     `);
+  } else {
+    console.log(`     🌐 Strategy: FULL-MESH MULTI-DEX ($${minLiq.toLocaleString()} - $${actualMaxLiq.toLocaleString()})     `);
+    console.log(`     Scanning all liquidity depths across V4, V3, and V2 AMMs     `);
   }
   if (isTestnet) {
     console.log(`     🧪 Network Mode: TESTNET (Base Sepolia Free Faucet Simulation) `);
@@ -202,9 +205,10 @@ export async function findArbitrageCandidates(
           queriedAddrs.add(t.address.toLowerCase());
           for (const p of data.pairs) {
             if (p.chainId?.toLowerCase() !== chain.toLowerCase()) continue;
-            if (!p.pairAddress || !ethers.isAddress(p.pairAddress)) continue;
+            const isV4 = p.labels?.includes("v4") || (typeof p.pairAddress === "string" && p.pairAddress.length === 66);
+            if (!p.pairAddress || (!ethers.isAddress(p.pairAddress) && !isV4)) continue;
             const dexId = (p.dexId || "").toLowerCase();
-            if (!SUPPORTED_FLASH_DEXES.has(dexId)) continue;
+            if (!SUPPORTED_FLASH_DEXES.has(dexId) && !isV4) continue;
             const liq = p.liquidity?.usd || 0;
             const maxAllowed = smallPondMode ? actualMaxLiq : DEFAULT_MAX_LIQ_GENERAL;
             if (liq < minLiq || liq > maxAllowed) continue;
@@ -259,9 +263,10 @@ export async function findArbitrageCandidates(
         if (data.pairs) {
           for (const p of data.pairs) {
             if (p.chainId?.toLowerCase() !== chain.toLowerCase()) continue;
-            if (!p.pairAddress || !ethers.isAddress(p.pairAddress)) continue;
+            const isV4 = p.labels?.includes("v4") || (typeof p.pairAddress === "string" && p.pairAddress.length === 66);
+            if (!p.pairAddress || (!ethers.isAddress(p.pairAddress) && !isV4)) continue;
             const dexId = (p.dexId || "").toLowerCase();
-            if (!SUPPORTED_FLASH_DEXES.has(dexId)) continue;
+            if (!SUPPORTED_FLASH_DEXES.has(dexId) && !isV4) continue;
             const liq = p.liquidity?.usd || 0;
             const maxAllowed = smallPondMode ? actualMaxLiq : DEFAULT_MAX_LIQ_GENERAL;
             if (liq < minLiq || liq > maxAllowed) continue;
@@ -326,10 +331,14 @@ export async function findArbitrageCandidates(
     console.log(`✅ SAFE (Buy Tax: ${safety.buyTax}, Sell Tax: ${safety.sellTax})`);
 
     // Pick top two pools across different DEXes
-    const validPools = candidate.pools.filter(p => p.pairAddress && ethers.isAddress(p.pairAddress));
+    const validPools = candidate.pools.filter(p => {
+      const isV4 = p.labels?.includes("v4") || (typeof p.pairAddress === "string" && p.pairAddress.length === 66);
+      return p.pairAddress && (ethers.isAddress(p.pairAddress) || isV4);
+    });
     if (validPools.length < 2) continue;
     const poolA = validPools[0];
-    const poolB = validPools.find(p => p.dexId.toLowerCase() !== poolA.dexId.toLowerCase());
+    const getDexIdentifier = p => (p.labels?.includes("v4") || (typeof p.pairAddress === "string" && p.pairAddress.length === 66)) ? "uniswap-v4" : (p.dexId || "").toLowerCase();
+    const poolB = validPools.find(p => getDexIdentifier(p) !== getDexIdentifier(poolA));
 
     if (!poolB) continue;
 
@@ -337,9 +346,8 @@ export async function findArbitrageCandidates(
     const priceB = parseFloat(poolB.priceUsd || "0");
     const spreadPct = priceA > 0 && priceB > 0 ? (Math.abs(priceA - priceB) / Math.min(priceA, priceB)) * 100 : 0;
 
-    // Small Pond Sweet Spot: At least one pool is accessible sweet-spot or it's a volatile memecoin
     const isSweetSpot = (poolA.liquidity?.usd <= 150000 || poolB.liquidity?.usd <= 150000);
-    const stratName = isSweetSpot ? "Volatile Memecoin Sweet Spot ($2k-$150k)" : "Memecoin Liquid Spread";
+    const stratName = isSweetSpot ? "Sweet Spot ($2k-$150k)" : "Full Market Spread ($2k-$5M)";
 
     safeArbitragePairs.push({
       symbol: candidate.tokenSymbol,
@@ -349,13 +357,13 @@ export async function findArbitrageCandidates(
       strategy: stratName,
       isSmallPond: smallPondMode,
       poolA: {
-        dex: poolA.dexId,
+        dex: getDexIdentifier(poolA),
         pairAddress: poolA.pairAddress,
         priceUsd: poolA.priceUsd,
         liquidityUsd: poolA.liquidity?.usd
       },
       poolB: {
-        dex: poolB.dexId,
+        dex: getDexIdentifier(poolB),
         pairAddress: poolB.pairAddress,
         priceUsd: poolB.priceUsd,
         liquidityUsd: poolB.liquidity?.usd
