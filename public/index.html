@@ -285,6 +285,53 @@
           </div>
         </div>
 
+        <!-- Pre-Flight Simulation & Emulation History (Zero-Gas Off-Chain Audits) -->
+        <div class="card" id="preflight-emulation-card" style="margin-top: 24px; border: 1px solid rgba(56, 189, 248, 0.3); background: linear-gradient(180deg, rgba(56, 189, 248, 0.04) 0%, rgba(15, 23, 42, 0.6) 100%);">
+          <div class="card-header flex-between">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="badge-pro" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid #38bdf8;">OFF-CHAIN SAFETY SHIELD</span>
+                <h2 class="card-title" style="margin: 0;">Pre-Flight Simulation &amp; Emulation Records</h2>
+              </div>
+              <span class="card-sub">Off-chain <code style="color: #38bdf8;">staticCall</code> emulation ledger ($0 gas). Pre-validates pool repayment before submitting on-chain. Timestamps converted to Indian Standard Time (IST).</span>
+            </div>
+            <div class="trade-actions" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+              <span class="badge-pro" id="preflight-count-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); font-weight: 700;">
+                🔍 32 Emulations
+              </span>
+              <span class="badge-pro" id="preflight-saved-gas-badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid #10b981; font-weight: 700;">
+                🛡️ Gas Saved: $1.60+
+              </span>
+              <button class="btn btn-outline btn-sm" id="btn-clear-preflight-history" style="font-size: 0.76rem;">
+                <span>🗑️ Clear Emulation Records</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="table-responsive" id="preflight-scroll-container" style="max-height: 420px; overflow-y: auto; overflow-x: auto; position: relative;">
+            <table class="data-table" id="table-preflight-emulation">
+              <thead>
+                <tr>
+                  <th style="min-width: 170px;">Timestamp (IST)</th>
+                  <th>Token &amp; Route</th>
+                  <th>Function Call</th>
+                  <th>Borrow Size</th>
+                  <th>MinProfit / Est. Net</th>
+                  <th>Emulation Result</th>
+                  <th style="min-width: 280px;">Detailed Revert Reason / Diagnostic</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-preflight-emulation">
+                <tr>
+                  <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                    No pre-flight emulation events recorded yet. Candidate spread simulations will appear here in real time.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- Solution 4: Intra-DEX Triangular Arbitrage & Small Pond Card -->
         <div class="card" id="triangular-arb-card" style="border: 1px solid rgba(168, 85, 247, 0.35); background: linear-gradient(180deg, rgba(168, 85, 247, 0.05) 0%, rgba(15, 23, 42, 0.6) 100%);">
           <div class="card-header flex-between">

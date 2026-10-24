@@ -366,12 +366,33 @@ export async function findArbitrageCandidates(
   // Sort by highest spread first
   safeArbitragePairs.sort((a, b) => parseFloat(b.spreadPercent) - parseFloat(a.spreadPercent));
 
-  // [4/4] Output & Save
-  console.log(`\n[4/4] Completed! Verified ${safeArbitragePairs.length} safe arbitrage targets.`);
-
+  // [4/4] Output & Save - Merge with existing monitored pairs to preserve verified assets
   const outputPath = path.resolve(process.cwd(), "monitored_pairs.json");
-  fs.writeFileSync(outputPath, JSON.stringify(safeArbitragePairs, null, 2));
-  console.log(`Saved verified pairs to: ${outputPath}\n`);
+  let existing = [];
+  if (fs.existsSync(outputPath)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(outputPath, "utf8"));
+    } catch {
+      existing = [];
+    }
+  }
+
+  const mergedMap = new Map();
+  // Keep existing verified pairs first
+  for (const p of existing) {
+    const key = `${(p.symbol || "").toUpperCase()}/${(p.quoteSymbol || "WETH").toUpperCase()}`;
+    mergedMap.set(key, p);
+  }
+  // Add newly discovered pairs if not present
+  for (const p of safeArbitragePairs) {
+    const key = `${(p.symbol || "").toUpperCase()}/${(p.quoteSymbol || "WETH").toUpperCase()}`;
+    if (!mergedMap.has(key)) {
+      mergedMap.set(key, p);
+    }
+  }
+  const mergedList = Array.from(mergedMap.values());
+  fs.writeFileSync(outputPath, JSON.stringify(mergedList, null, 2), "utf8");
+  console.log(`\n[4/4] Completed! Total monitored pairs: ${mergedList.length} (Saved to: ${outputPath})\n`);
 
   if (safeArbitragePairs.length > 0) {
     console.log("Top Discovered Pairs:");

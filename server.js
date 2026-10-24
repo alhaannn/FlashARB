@@ -181,7 +181,8 @@ function loadSavedStats() {
     scamsBlocked: 0,
     pairsAudited: 0,
     totalCycles: 0,
-    recentTrades: []
+    recentTrades: [],
+    recentPreflights: []
   };
 }
 
@@ -203,7 +204,8 @@ let autopilotState = {
   smallPondMode: true,
   triangularEngineActive: true,
   v3ConcentratedEngineActive: true,
-  recentTrades: saved.recentTrades || []
+  recentTrades: saved.recentTrades || [],
+  recentPreflights: saved.recentPreflights || []
 };
 
 function saveAutopilotStats() {
@@ -214,7 +216,8 @@ function saveAutopilotStats() {
     scamsBlocked: autopilotState.scamsBlocked,
     pairsAudited: autopilotState.pairsAudited,
     totalCycles: autopilotState.totalCycles,
-    recentTrades: autopilotState.recentTrades.slice(0, 50) // keep last 50
+    recentTrades: autopilotState.recentTrades.slice(0, 50),
+    recentPreflights: autopilotState.recentPreflights.slice(0, 100)
   };
   fs.writeFileSync(AUTOPILOT_STATS_FILE, JSON.stringify(data, null, 2), "utf8");
 }
@@ -634,45 +637,60 @@ function estimateTokenUsdPrice(tokenAddress, pair) {
   return fallbackPrice > 0 ? fallbackPrice : 1;
 }
 
-async function runAutopilotMonitoringCycle() {
+let isMonitoringBusy = false;
+
+async function runAutopilotMonitoringCycle(targetedPair = null) {
   if (!autopilotState.running) return;
-  autopilotState.totalCycles++;
+  if (isMonitoringBusy && !targetedPair) return; // Prevent overlapping full block scans
+  isMonitoringBusy = true;
 
-  // Solution 4: Periodically evaluate Intra-DEX Triangular Arbitrage
-  if (autopilotState.totalCycles % 3 === 0) {
-    await runAutopilotTriangularCycle();
-  }
+  try {
+    autopilotState.totalCycles++;
 
-  // Solution 5: Periodically evaluate Concentrated Liquidity (V2 <-> V3 / Slipstream) Arbitrage
-  if (autopilotState.totalCycles % 4 === 0) {
-    await runAutopilotV3Cycle();
-  }
-
-  const chain = process.env.CHAIN || "base";
-  const pairsPath = path.join(__dirname, "monitored_pairs.json");
-  let pairs = [];
-
-  if (fs.existsSync(pairsPath)) {
-    try {
-      pairs = JSON.parse(fs.readFileSync(pairsPath, "utf8"));
-    } catch {
-      pairs = [];
+    // Solution 4: Periodically evaluate Intra-DEX Triangular Arbitrage
+    if (!targetedPair && autopilotState.totalCycles % 3 === 0) {
+      await runAutopilotTriangularCycle();
     }
-  }
 
-  if (pairs.length === 0) {
-    logEvent("AUTOPILOT", "info", "No monitored pairs available. Triggering automated discovery...");
-    pairs = await runAutopilotDiscoveryCycle();
-  }
+    // Solution 5: Periodically evaluate Concentrated Liquidity (V2 <-> V3 / Slipstream) Arbitrage
+    if (!targetedPair && autopilotState.totalCycles % 4 === 0) {
+      await runAutopilotV3Cycle();
+    }
 
-  if (pairs.length === 0) {
-    logEvent("AUTOPILOT", "warn", "No eligible pairs found. Will retry in next cycle.");
-    return;
-  }
+    const chain = process.env.CHAIN || "base";
+    const pairsPath = path.join(__dirname, "monitored_pairs.json");
+    let pairs = [];
 
-  // Pick a pair to evaluate
-  const pairIndex = (autopilotState.totalCycles - 1) % pairs.length;
-  const currentPair = pairs[pairIndex];
+    if (fs.existsSync(pairsPath)) {
+      try {
+        pairs = JSON.parse(fs.readFileSync(pairsPath, "utf8"));
+      } catch {
+        pairs = [];
+      }
+    }
+
+    if (pairs.length === 0) {
+      logEvent("AUTOPILOT", "info", "No monitored pairs available. Triggering automated discovery...");
+      pairs = await runAutopilotDiscoveryCycle();
+    }
+
+    if (pairs.length === 0) {
+      logEvent("AUTOPILOT", "warn", "No eligible pairs found. Will retry in next cycle.");
+      return;
+    }
+
+    // If targetedPair is provided (via WSS real-time swap event), evaluate it immediately (<15ms).
+    // Otherwise evaluate all pairs in this cycle.
+    const pairsToScan = targetedPair ? [targetedPair] : pairs;
+    for (const currentPair of pairsToScan) {
+      await evaluateSinglePair(currentPair, chain);
+    }
+  } finally {
+    isMonitoringBusy = false;
+  }
+}
+
+async function evaluateSinglePair(currentPair, chain) {
   autopilotState.currentStatus = `Evaluating ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex})`;
   broadcast({ type: "autopilot_state", data: autopilotState });
   logEvent("AUTOPILOT", "info", `[Cycle #${autopilotState.totalCycles}] 🔍 Evaluating ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex})...`);
@@ -929,10 +947,12 @@ async function runAutopilotMonitoringCycle() {
   const profitQuoteUnits = parseFloat(formatTokenUnits(routeOpt.maxProfit, repayDecimals));
   const grossProfitUsd = profitQuoteUnits * quotePriceUsd;
 
-  // Deduct 85% validator tip & L2 gas ($0.01 on Base)
-  const netProfitUsd = (grossProfitUsd * 0.15) - 0.01;
+  // Deduct validator tip from TIP_PERCENT (.env) & L2 gas ($0.01 on Base)
+  const tipPercent = parseFloat(process.env.TIP_PERCENT || "80") / 100;
+  const netProfitUsd = (grossProfitUsd * (1 - tipPercent)) - 0.01;
+  const minProfitUsd = parseFloat(process.env.MIN_PROFIT_USD || "0.01");
 
-  if (netProfitUsd > 0.05) {
+  if (netProfitUsd >= minProfitUsd) {
     autopilotState.opportunitiesDetected++;
     const borrowAmountFormatted = formatTokenUnits(routeOpt.optimalBorrow, borrowDecimals);
     const routeDesc = routeOpt.borrowDex ? `${routeOpt.borrowDex} ➔ ${routeOpt.targetDex}` : `${routeOpt.borrowPool.substring(0, 8)}... ➔ ${routeOpt.targetPool.substring(0, 8)}...`;
@@ -944,7 +964,21 @@ async function runAutopilotMonitoringCycle() {
     const isLive = Boolean(privateKey && executorAddress && executorAddress.startsWith("0x") && executorAddress !== "0x0000000000000000000000000000000000000000");
 
     let txHash;
-    const minProfitRaw = (routeOpt.maxProfit * 90n) / 100n; // 10% slippage buffer
+    // Fix 1: Wire MIN_PROFIT from .env (e.g. 0.001) into raw units, allowing slippage tolerance
+    const envMinProfitStr = process.env.MIN_PROFIT || "0.001";
+    let minProfitRaw = 1n;
+    try {
+      minProfitRaw = ethers.parseUnits(envMinProfitStr, repayDecimals);
+    } catch {
+      minProfitRaw = 1n;
+    }
+    // Cap at 50% of theoretical maxProfit so we never demand more than optimal, but permit execution down to MIN_PROFIT
+    const halfMaxProfit = (routeOpt.maxProfit * 50n) / 100n;
+    if (minProfitRaw > halfMaxProfit && halfMaxProfit > 0n) {
+      minProfitRaw = halfMaxProfit;
+    }
+    if (minProfitRaw <= 0n) minProfitRaw = 1n;
+
     let methodName = "executeFlashArb";
     if (routeOpt.isV3ToV3) {
       methodName = "executeV3ToV3FlashArb";
@@ -974,6 +1008,24 @@ async function runAutopilotMonitoringCycle() {
           0n
         );
         logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] On-chain state verified profitable! Zero revert risk.`);
+        const preflightPassedRecord = {
+          id: Date.now(),
+          timestamp: new Date().toISOString(),
+          symbol: currentPair.symbol,
+          quoteSymbol: currentPair.quoteSymbol,
+          route: routeDesc,
+          method: methodName,
+          borrowAmount: `${borrowAmountFormatted.substring(0, 10)} ${currentPair.symbol}`,
+          minProfit: `${formatTokenUnits(minProfitRaw, repayDecimals)}`,
+          projectedNetUsd: netProfitUsd.toFixed(2),
+          status: "PASSED",
+          reason: "On-chain state verified profitable! Zero revert risk.",
+          gasSaved: "$0.00"
+        };
+        autopilotState.recentPreflights.unshift(preflightPassedRecord);
+        if (autopilotState.recentPreflights.length > 100) autopilotState.recentPreflights.pop();
+        saveAutopilotStats();
+        broadcast({ type: "autopilot_preflight", preflight: preflightPassedRecord, recentPreflights: autopilotState.recentPreflights });
       } catch (simError) {
         // Fix Finding F: Revert diagnostics with context, code, sanitized parameters
         const diag = formatRevertDiagnostics(simError, {
@@ -988,6 +1040,25 @@ async function runAutopilotMonitoringCycle() {
           }
         });
         logEvent("PRE_FLIGHT", "warn", `[PRE-FLIGHT BLOCKED] ${diag.diagnosticString}. Dropped in local memory. Saved ~$0.05 gas!`);
+        
+        const preflightBlockedRecord = {
+          id: Date.now(),
+          timestamp: new Date().toISOString(),
+          symbol: currentPair.symbol,
+          quoteSymbol: currentPair.quoteSymbol,
+          route: routeDesc,
+          method: methodName,
+          borrowAmount: `${borrowAmountFormatted.substring(0, 10)} ${currentPair.symbol}`,
+          minProfit: `${formatTokenUnits(minProfitRaw, repayDecimals)}`,
+          projectedNetUsd: netProfitUsd.toFixed(2),
+          status: "BLOCKED",
+          reason: diag.diagnosticString || "FlashArb: Arbitrage unprofitable",
+          gasSaved: "$0.05"
+        };
+        autopilotState.recentPreflights.unshift(preflightBlockedRecord);
+        if (autopilotState.recentPreflights.length > 100) autopilotState.recentPreflights.pop();
+        saveAutopilotStats();
+        broadcast({ type: "autopilot_preflight", preflight: preflightBlockedRecord, recentPreflights: autopilotState.recentPreflights });
         return; // Abort trade: failed simulation strictly blocks execution
       }
 
@@ -1164,18 +1235,16 @@ app.post("/api/autopilot/start", async (req, res) => {
           activeWsSyncListener = new WebSocketSyncListener(
             wssUrl,
             activePairs,
-            async ({ pair, opportunity, latencyMs }) => {
-              logEvent("WSS", "success", `⚡ [Real-Time Sync (${latencyMs}ms)] Spread on ${pair.symbol}: ${opportunity.borrowDex} -> ${opportunity.targetDex}`);
-              broadcast({
-                type: "opportunity",
-                pair: pair,
-                spread: opportunity.spreadPercent || pair.spreadPercent,
-                timestamp: new Date().toLocaleTimeString()
-              });
-              // Instantly run the monitoring cycle for this pool
-              await runAutopilotMonitoringCycle();
+            async ({ pair, poolAddress, type, latencyMs }) => {
+              logEvent("WSS", "success", `⚡ [Real-Time ${type} (${latencyMs}ms)] Pool activity on ${pair.symbol} (${poolAddress.substring(0, 10)}...)! Instant evaluation triggered.`);
+              await runAutopilotMonitoringCycle(pair);
             },
-            (lvl, msg) => logEvent("WSS", lvl, msg)
+            (lvl, msg) => logEvent("WSS", lvl, msg),
+            async (blockNumber) => {
+              // Triggered on every new Base block (~2s on Base)
+              logEvent("WSS", "info", `⚡ [WSS Block #${blockNumber}] New Base block received. Running instant multi-pair audit...`);
+              await runAutopilotMonitoringCycle();
+            }
           );
           await activeWsSyncListener.start();
           autopilotState.streamActive = true;
@@ -1282,6 +1351,14 @@ app.post("/api/autopilot/reset-stats", (req, res) => {
   saveAutopilotStats();
   broadcast({ type: "autopilot_state", data: autopilotState });
   res.json({ success: true, message: "Stats reset to zero" });
+});
+
+// Clear Preflight Emulation Records Route
+app.post("/api/autopilot/preflights/clear", (req, res) => {
+  autopilotState.recentPreflights = [];
+  saveAutopilotStats();
+  broadcast({ type: "autopilot_preflights_cleared" });
+  res.json({ success: true, message: "Pre-flight emulation records cleared" });
 });
 
 // 3. Read Configuration (Masked)

@@ -181,6 +181,14 @@ function handleWsMessage(payload) {
       handleNewAutopilotTrade(payload.trade, payload.cumulativeProfitUsd, payload.tradesExecuted);
       break;
 
+    case "autopilot_preflight":
+      handleNewPreflight(payload.preflight);
+      break;
+
+    case "autopilot_preflights_cleared":
+      clearPreflightsUI();
+      break;
+
     case "autopilot_runtime":
       document.getElementById("auto-runtime-val").textContent = formatRuntime(payload.seconds);
       break;
@@ -272,6 +280,26 @@ function initAutopilot() {
         }
       } catch (err) {
         showToast("Error resetting stats: " + err.message, "error");
+      }
+    });
+  }
+
+  // Pre-flight Emulation History Clear Handler
+  const btnClearPreflights = document.getElementById("btn-clear-preflight-history");
+  if (btnClearPreflights) {
+    btnClearPreflights.addEventListener("click", async () => {
+      if (!confirm("Are you sure you want to clear all pre-flight emulation records?")) return;
+      try {
+        const res = await fetch("/api/autopilot/preflights/clear", { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+          clearPreflightsUI();
+          showToast("Pre-flight emulation records cleared", "info");
+        } else {
+          showToast(data.error || "Failed to clear preflights", "error");
+        }
+      } catch (err) {
+        showToast("Error clearing preflights: " + err.message, "error");
       }
     });
   }
@@ -440,6 +468,9 @@ function updateAutopilotUI(data) {
   if (data.recentTrades) {
     renderAutopilotTrades(data.recentTrades);
   }
+  if (data.recentPreflights) {
+    renderPreflightRecords(data.recentPreflights);
+  }
 }
 
 function handleNewAutopilotTrade(trade, cumProfit, totalTrades) {
@@ -518,6 +549,190 @@ function renderAutopilotTrades(trades) {
     `;
     tbody.appendChild(tr);
   });
+}
+
+/* ==========================================================================
+   Pre-Flight Simulation & Emulation History (Off-Chain Zero Gas Guard)
+   Converts timestamps from UTC to Indian Standard Time (IST) for easy analysis.
+   ========================================================================== */
+
+function formatTimestampIST(isoOrDateString) {
+  if (!isoOrDateString) return "--";
+  try {
+    const d = new Date(isoOrDateString);
+    if (isNaN(d.getTime())) return isoOrDateString;
+    return d.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true
+    }) + " IST";
+  } catch (err) {
+    return isoOrDateString;
+  }
+}
+
+function clearPreflightsUI() {
+  const tbody = document.getElementById("tbody-preflight-emulation");
+  if (tbody) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">
+          No pre-flight emulation events recorded yet. Candidate spread simulations will appear here in real time.
+        </td>
+      </tr>
+    `;
+  }
+  const countBadge = document.getElementById("preflight-count-badge");
+  if (countBadge) countBadge.textContent = "🔍 0 Emulations";
+  const gasBadge = document.getElementById("preflight-saved-gas-badge");
+  if (gasBadge) gasBadge.textContent = "🛡️ Gas Saved: $0.00";
+}
+
+function updatePreflightBadgeCounters() {
+  const tbody = document.getElementById("tbody-preflight-emulation");
+  if (!tbody) return;
+  const rows = tbody.querySelectorAll("tr");
+  let count = 0;
+  let blockedCount = 0;
+  rows.forEach(r => {
+    if (!r.innerText.includes("No pre-flight emulation")) {
+      count++;
+      if (r.innerText.includes("BLOCKED")) blockedCount++;
+    }
+  });
+
+  const countBadge = document.getElementById("preflight-count-badge");
+  if (countBadge) countBadge.textContent = `🔍 ${count} Emulations`;
+  const gasBadge = document.getElementById("preflight-saved-gas-badge");
+  if (gasBadge) gasBadge.textContent = `🛡️ Gas Saved: $${(blockedCount * 0.05).toFixed(2)}+`;
+}
+
+function handleNewPreflight(preflight) {
+  if (!preflight) return;
+  const tbody = document.getElementById("tbody-preflight-emulation");
+  if (!tbody) return;
+
+  // Clear placeholder row if empty
+  if (tbody.children.length === 1 && tbody.children[0].innerText.includes("No pre-flight emulation")) {
+    tbody.innerHTML = "";
+  }
+
+  const isPassed = preflight.status === "PASSED";
+  const isV3 = preflight.method === "executeFlashArbV3";
+  const istTime = formatTimestampIST(preflight.timestamp);
+
+  const tr = document.createElement("tr");
+  tr.style.backgroundColor = isPassed ? "rgba(16, 185, 129, 0.12)" : "rgba(239, 68, 68, 0.09)";
+
+  tr.innerHTML = `
+    <td class="font-mono text-muted" style="font-size: 0.76rem; white-space: nowrap;">${istTime}</td>
+    <td>
+      <strong style="color: #fff;">${preflight.symbol}</strong>
+      <span class="text-muted">/${preflight.quoteSymbol || "WETH"}</span>
+      <div style="font-size: 0.72rem; color: var(--accent-cyan); font-family: var(--font-mono); margin-top: 2px;">${preflight.route || "--"}</div>
+    </td>
+    <td>
+      <span class="badge-pro" style="background: ${isV3 ? "rgba(168, 85, 247, 0.15)" : "rgba(6, 182, 212, 0.15)"}; color: ${isV3 ? "#c084fc" : "#22d3ee"}; font-family: var(--font-mono); font-size: 0.72rem;">
+        ${isV3 ? "V3 Concentrated" : "V2 Standard"}
+      </span>
+    </td>
+    <td class="font-mono" style="font-size: 0.78rem; font-weight: 600;">${preflight.borrowAmount || "--"}</td>
+    <td>
+      <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono);">Min: ${preflight.minProfit || "--"}</div>
+      <div style="font-size: 0.78rem; font-family: var(--font-mono); font-weight: 700; color: ${parseFloat(preflight.projectedNetUsd) > 0 ? "var(--neon-emerald)" : "var(--neon-rose)"};">
+        Est: $${preflight.projectedNetUsd || "0.00"}
+      </div>
+    </td>
+    <td>
+      <span class="badge-pro" style="background: ${isPassed ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.18)"}; color: ${isPassed ? "#34d399" : "#f87171"}; border: 1px solid ${isPassed ? "#10b981" : "#ef4444"}; font-weight: 700; font-size: 0.72rem;">
+        ${isPassed ? "🟢 PASSED" : "🛡️ BLOCKED"}
+      </span>
+    </td>
+    <td>
+      <div style="font-size: 0.76rem; font-family: var(--font-mono); color: ${isPassed ? "#34d399" : "#fca5a5"}; line-height: 1.35;">
+        ${preflight.reason || "Reverted during staticCall emulation"}
+      </div>
+      <div style="font-size: 0.70rem; color: #34d399; margin-top: 3px;">
+        💰 Saved ~${preflight.gasSaved || "$0.05"} gas fee
+      </div>
+    </td>
+  `;
+
+  tbody.prepend(tr);
+
+  // Animate fade
+  setTimeout(() => {
+    tr.style.backgroundColor = "transparent";
+    tr.style.transition = "background-color 1s ease";
+  }, 1500);
+
+  updatePreflightBadgeCounters();
+}
+
+function renderPreflightRecords(preflights) {
+  const tbody = document.getElementById("tbody-preflight-emulation");
+  if (!tbody) return;
+
+  if (!preflights || preflights.length === 0) {
+    clearPreflightsUI();
+    return;
+  }
+
+  tbody.innerHTML = "";
+  let blockedCount = 0;
+
+  preflights.forEach(item => {
+    const isPassed = item.status === "PASSED";
+    if (!isPassed) blockedCount++;
+    const isV3 = item.method === "executeFlashArbV3";
+    const istTime = formatTimestampIST(item.timestamp);
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="font-mono text-muted" style="font-size: 0.76rem; white-space: nowrap;">${istTime}</td>
+      <td>
+        <strong style="color: #fff;">${item.symbol}</strong>
+        <span class="text-muted">/${item.quoteSymbol || "WETH"}</span>
+        <div style="font-size: 0.72rem; color: var(--accent-cyan); font-family: var(--font-mono); margin-top: 2px;">${item.route || "--"}</div>
+      </td>
+      <td>
+        <span class="badge-pro" style="background: ${isV3 ? "rgba(168, 85, 247, 0.15)" : "rgba(6, 182, 212, 0.15)"}; color: ${isV3 ? "#c084fc" : "#22d3ee"}; font-family: var(--font-mono); font-size: 0.72rem;">
+          ${isV3 ? "V3 Concentrated" : "V2 Standard"}
+        </span>
+      </td>
+      <td class="font-mono" style="font-size: 0.78rem; font-weight: 600;">${item.borrowAmount || "--"}</td>
+      <td>
+        <div style="font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono);">Min: ${item.minProfit || "--"}</div>
+        <div style="font-size: 0.78rem; font-family: var(--font-mono); font-weight: 700; color: ${parseFloat(item.projectedNetUsd) > 0 ? "var(--neon-emerald)" : "var(--neon-rose)"};">
+          Est: $${item.projectedNetUsd || "0.00"}
+        </div>
+      </td>
+      <td>
+        <span class="badge-pro" style="background: ${isPassed ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.18)"}; color: ${isPassed ? "#34d399" : "#f87171"}; border: 1px solid ${isPassed ? "#10b981" : "#ef4444"}; font-weight: 700; font-size: 0.72rem;">
+          ${isPassed ? "🟢 PASSED" : "🛡️ BLOCKED"}
+        </span>
+      </td>
+      <td>
+        <div style="font-size: 0.76rem; font-family: var(--font-mono); color: ${isPassed ? "#34d399" : "#fca5a5"}; line-height: 1.35;">
+          ${item.reason || "Reverted during staticCall emulation"}
+        </div>
+        <div style="font-size: 0.70rem; color: #34d399; margin-top: 3px;">
+          💰 Saved ~${item.gasSaved || "$0.05"} gas fee
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  const countBadge = document.getElementById("preflight-count-badge");
+  if (countBadge) countBadge.textContent = `🔍 ${preflights.length} Emulations`;
+  const gasBadge = document.getElementById("preflight-saved-gas-badge");
+  if (gasBadge) gasBadge.textContent = `🛡️ Gas Saved: $${(blockedCount * 0.05).toFixed(2)}+`;
 }
 
 function formatRuntime(totalSeconds) {
@@ -1811,6 +2026,10 @@ async function fetchStatus() {
         streamEl.className = "pill-value highlight";
         streamDot.className = "pill-dot";
       }
+    }
+
+    if (status.autopilotState) {
+      updateAutopilotUI(status.autopilotState);
     }
   } catch (err) {
     console.error("Failed to fetch status:", err);

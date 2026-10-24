@@ -282,9 +282,8 @@ export async function getPoolProtocolInfo(poolAddress, provider) {
       poolProtocolCache.set(cacheKey, { type: "V3", token0: info.token0, token1: info.token1, feeMillionths });
       return info;
     } catch {
-      const info = { type: "UNKNOWN", address: checksummed };
-      poolProtocolCache.set(cacheKey, info);
-      return info;
+      // Do not cache UNKNOWN permanently so transient RPC timeouts recover on next block
+      return { type: "UNKNOWN", address: checksummed };
     }
   }
 }

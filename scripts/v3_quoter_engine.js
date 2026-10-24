@@ -146,8 +146,17 @@ export class V3QuoterEngine {
     const r1_A = BigInt(v2Pool.reserve1 || v2Pool.r1 || ethers.parseEther("250000"));
     const [reserveOut, reserveIn] = borrowToken0 ? [r0_A, r1_A] : [r1_A, r0_A];
 
-    let low = reserveOut > 100000n ? reserveOut / 100000n : 10n;
-    let high = reserveOut / 3n;
+    const L_V3 = BigInt(v3Pool.liquidity || 0);
+    const sqrtP_V3 = BigInt(v3Pool.sqrtPriceX96 || 0);
+    if (L_V3 <= 0n || sqrtP_V3 <= 0n) return { optimalBorrow: 0n, maxProfit: 0n, isProfitable: false, borrowToken0 };
+
+    // Dynamically bound search space by both V2 pool reserves and V3 single-tick depth
+    const v3Cap = borrowToken0 ? (L_V3 * Q96) / sqrtP_V3 : (L_V3 * sqrtP_V3) / Q96;
+    const maxCap = reserveOut < v3Cap ? reserveOut : v3Cap;
+    if (maxCap <= 1000n) return { optimalBorrow: 0n, maxProfit: 0n, isProfitable: false, borrowToken0 };
+
+    let low = maxCap > 100000n ? maxCap / 100000n : 10n;
+    let high = maxCap / 4n;
     if (high <= low) return { optimalBorrow: 0n, maxProfit: 0n, isProfitable: false, borrowToken0 };
 
     // Evaluate single trade function
