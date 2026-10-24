@@ -9,16 +9,25 @@ import "./interfaces/IUniswapV2Callee.sol";
 import "./interfaces/IPoolCallee.sol";
 import "./interfaces/IAerodromePool.sol";
 import "./interfaces/IUniswapV3Pool.sol";
+import "./interfaces/IUniswapV4.sol";
 import "./interfaces/IWETH.sol";
 import "./libraries/UniswapV2Library.sol";
 
-/// @title FlashArbExecutor - Production-Grade DEX Arbitrage Executor
-/// @notice Executes uncollateralized flash swap arbitrage between two Uniswap V2 compatible DEX pools
-/// @dev Implements Uniswap V2 Callee, Aerodrome Pool Callee, Uniswap V3 Callback, and Flashbots block.coinbase tipping
-contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallback, IPancakeV3SwapCallback, Ownable {
+/// @title FlashArbExecutor - Production-Grade Full-Mesh DEX Arbitrage Executor
+/// @notice Executes uncollateralized flash swap arbitrage between Uniswap V2, V3, and V4 compatible DEX pools
+/// @dev Implements Uniswap V2 Callee, Aerodrome Pool Callee, Uniswap V3 Callback, PancakeSwap V3 Callback, and Uniswap V4 Unlock Callback
+contract FlashArbExecutor is
+    IUniswapV2Callee,
+    IPoolCallee,
+    IUniswapV3SwapCallback,
+    IPancakeV3SwapCallback,
+    IUnlockCallback,
+    Ownable
+{
     using SafeERC20 for IERC20;
 
     address public immutable WETH;
+    address public poolManager;
 
     event ArbitrageExecuted(
         address indexed poolBorrow,
@@ -28,7 +37,18 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
         uint256 validatorTip
     );
 
-    enum ArbType { TWO_POOL, TRIANGULAR, V2_TO_V3, V3_TO_V3 }
+    enum ArbType {
+        TWO_POOL,
+        TRIANGULAR,
+        V2_TO_V3,
+        V3_TO_V3,
+        V3_TO_V2,
+        V4_TO_V4,
+        V4_TO_V3,
+        V4_TO_V2,
+        V2_TO_V4,
+        V3_TO_V4
+    }
 
     struct ArbParams {
         ArbType arbType;
@@ -42,9 +62,22 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
         address recipient;
     }
 
+    struct V4ArbParams {
+        ArbType arbType;
+        PoolKey v4KeyBorrow;
+        PoolKey v4KeyTarget;
+        address targetPool;
+        uint256 amountBorrow;
+        bool borrowToken0;
+        uint256 minProfit;
+        uint256 validatorTip;
+        address recipient;
+    }
+
     // Active execution context guards to prevent unauthenticated callbacks and reentrancy
     address private _activeV2BorrowPool;
     address private _activeV3BorrowPool;
+    bool private _activeV4Borrow;
 
     struct V3SwapContext {
         address expectedPool;
@@ -57,9 +90,16 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
     constructor(address _weth) Ownable(msg.sender) {
         require(_weth != address(0), "FlashArb: Invalid WETH");
         WETH = _weth;
+        // Default to Base Mainnet Uniswap V4 PoolManager
+        poolManager = 0x498581fF718922c3f8e6A244956aF099B2652b2b;
     }
 
-    /// @notice Initiates a flash swap arbitrage between poolBorrow and poolTarget
+    function setPoolManager(address _poolManager) external onlyOwner {
+        require(_poolManager != address(0), "FlashArb: Invalid PoolManager");
+        poolManager = _poolManager;
+    }
+
+    /// @notice Initiates a flash swap arbitrage between two V2 pools (poolBorrow and poolTarget)
     function executeFlashArb(
         address poolBorrow,
         address poolTarget,
@@ -95,8 +135,7 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
         _activeV2BorrowPool = address(0);
     }
 
-    /// @notice Initiates a 3-hop intra-DEX triangular flash swap arbitrage (Solution 4)
-    /// Route: Pool 1 (Base <-> TokenA) ➔ Pool 2 (TokenA <-> TokenB) ➔ Pool 3 (TokenB <-> Base)
+    /// @notice Initiates a 3-hop intra-DEX triangular flash swap arbitrage
     function executeTriangularFlashArb(
         address pool1,
         address pool2,
@@ -133,8 +172,7 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
         _activeV2BorrowPool = address(0);
     }
 
-    /// @notice Solution 5: Executes flash swap between Uniswap V2 and Uniswap V3 / Slipstream
-    /// Borrow from V2 (constant product) ➔ Swap on V3 (concentrated liquidity) ➔ Repay V2
+    /// @notice Borrow from V2 (constant product) ➔ Swap on V3 (concentrated liquidity) ➔ Repay V2
     function executeV2ToV3FlashArb(
         address poolV2Borrow,
         address poolV3Target,
@@ -169,8 +207,7 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
         _activeV2BorrowPool = address(0);
     }
 
-    /// @notice Solution 6: Executes flash swap between two Uniswap V3 / Slipstream / Pancake V3 pools
-    /// Borrow from Pool A (V3) ➔ Swap on Pool B (V3) ➔ Repay Pool A (V3)
+    /// @notice Borrow from Pool A (V3) ➔ Swap on Pool B (V3) ➔ Repay Pool A (V3)
     function executeV3ToV3FlashArb(
         address poolV3Borrow,
         address poolV3Target,
@@ -198,13 +235,10 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
             })
         );
 
-        // To borrow token0: we give token1 to get token0 (zeroForOne = false)
-        // To borrow token1: we give token0 to get token1 (zeroForOne = true)
         bool zeroForOne = !borrowToken0;
         uint160 sqrtPriceLimitX96 = zeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341;
 
         _activeV3BorrowPool = poolV3Borrow;
-        // Negative amountSpecified initiates exact output flash swap
         IUniswapV3Pool(poolV3Borrow).swap(
             address(this),
             zeroForOne,
@@ -213,6 +247,93 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
             data
         );
         _activeV3BorrowPool = address(0);
+    }
+
+    /// @notice Borrow from V3 (concentrated liquidity) ➔ Swap on V2 (constant product) ➔ Repay V3
+    function executeV3ToV2FlashArb(
+        address poolV3Borrow,
+        address poolV2Target,
+        uint256 amountBorrow,
+        bool borrowToken0,
+        uint256 minProfit,
+        uint256 validatorTip
+    ) external onlyOwner {
+        require(amountBorrow > 0, "FlashArb: Zero borrow amount");
+        require(poolV3Borrow != address(0) && poolV2Target != address(0), "FlashArb: Zero pool address");
+        require(_activeV3BorrowPool == address(0), "FlashArb: Active V3 swap in progress");
+
+        bytes memory data = abi.encode(
+            ArbParams({
+                arbType: ArbType.V3_TO_V2,
+                poolBorrow: poolV3Borrow,
+                poolTarget: poolV2Target,
+                pool3: address(0),
+                amountBorrow: amountBorrow,
+                borrowToken0: borrowToken0,
+                minProfit: minProfit,
+                validatorTip: validatorTip,
+                recipient: msg.sender
+            })
+        );
+
+        bool zeroForOne = !borrowToken0;
+        uint160 sqrtPriceLimitX96 = zeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341;
+
+        _activeV3BorrowPool = poolV3Borrow;
+        IUniswapV3Pool(poolV3Borrow).swap(
+            address(this),
+            zeroForOne,
+            -int256(amountBorrow),
+            sqrtPriceLimitX96,
+            data
+        );
+        _activeV3BorrowPool = address(0);
+    }
+
+    /// @notice Universal Uniswap V4 Arbitrage Executor (V4 -> V4, V4 -> V3, V4 -> V2)
+    /// Borrow from Uniswap V4 (0% flash fee) ➔ Swap on target pool ➔ Repay V4
+    function executeV4Arbitrage(
+        PoolKey calldata v4KeyBorrow,
+        uint8 targetDexType, // 1: V3, 2: V2, 3: V4
+        address targetPool,
+        PoolKey calldata targetV4Key,
+        uint256 amountBorrow,
+        bool borrowToken0,
+        uint256 minProfit,
+        uint256 validatorTip
+    ) external onlyOwner {
+        require(amountBorrow > 0, "FlashArb: Zero borrow amount");
+        require(poolManager != address(0), "FlashArb: Zero PoolManager");
+        require(!_activeV4Borrow, "FlashArb: Active V4 swap in progress");
+
+        ArbType arbType;
+        if (targetDexType == 1) {
+            arbType = ArbType.V4_TO_V3;
+            require(targetPool != address(0), "FlashArb: Zero target V3 pool");
+        } else if (targetDexType == 2) {
+            arbType = ArbType.V4_TO_V2;
+            require(targetPool != address(0), "FlashArb: Zero target V2 pool");
+        } else {
+            arbType = ArbType.V4_TO_V4;
+        }
+
+        bytes memory data = abi.encode(
+            V4ArbParams({
+                arbType: arbType,
+                v4KeyBorrow: v4KeyBorrow,
+                v4KeyTarget: targetV4Key,
+                targetPool: targetPool,
+                amountBorrow: amountBorrow,
+                borrowToken0: borrowToken0,
+                minProfit: minProfit,
+                validatorTip: validatorTip,
+                recipient: msg.sender
+            })
+        );
+
+        _activeV4Borrow = true;
+        IPoolManager(poolManager).unlock(data);
+        _activeV4Borrow = false;
     }
 
     /// @notice Callback invoked by Uniswap V2 pair during flash swap
@@ -254,7 +375,6 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
     function _executeTwoPoolLogic(ArbParams memory params) internal {
         (address borrowedToken, address repayToken) = _resolveTokens(params.poolBorrow, params.borrowToken0);
 
-        // Validate target pool tokens match expected pair
         address targetT0 = IUniswapV2Pair(params.poolTarget).token0();
         address targetT1 = IUniswapV2Pair(params.poolTarget).token1();
         require(
@@ -315,39 +435,7 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
         (address borrowedToken, address repayToken) = _resolveTokens(params.poolBorrow, params.borrowToken0);
         uint256 amountRequired = _getRepaymentAmount(params.poolBorrow, params.amountBorrow, params.borrowToken0);
 
-        address v3Token0 = IUniswapV3Pool(params.poolTarget).token0();
-        address v3Token1 = IUniswapV3Pool(params.poolTarget).token1();
-        require(
-            (v3Token0 == borrowedToken && v3Token1 == repayToken) ||
-            (v3Token0 == repayToken && v3Token1 == borrowedToken),
-            "FlashArb: Token mismatch in V3 pool"
-        );
-
-        require(_v3Context.expectedPool == address(0), "FlashArb: Active V3 swap in progress");
-
-        bool zeroForOne = (v3Token0 == borrowedToken);
-        uint160 sqrtPriceLimitX96 = zeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341;
-
-        // Establish authenticated V3 callback context
-        _v3Context = V3SwapContext({
-            expectedPool: params.poolTarget,
-            payingToken: borrowedToken,
-            maxAmountToPay: params.amountBorrow,
-            callbackExecuted: false
-        });
-
-        uint256 balBefore = IERC20(repayToken).balanceOf(address(this));
-        IUniswapV3Pool(params.poolTarget).swap(
-            address(this),
-            zeroForOne,
-            int256(params.amountBorrow),
-            sqrtPriceLimitX96,
-            abi.encode(borrowedToken)
-        );
-        uint256 amountOut = IERC20(repayToken).balanceOf(address(this)) - balBefore;
-
-        require(_v3Context.callbackExecuted, "FlashArb: V3 callback not executed");
-        delete _v3Context;
+        uint256 amountOut = _executeV3TargetSwap(params.poolTarget, borrowedToken, repayToken, params.amountBorrow);
 
         require(amountOut > amountRequired, "FlashArb: V2-V3 arb unprofitable");
         uint256 netProfit = amountOut - amountRequired;
@@ -391,21 +479,24 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
     ) internal {
         // Case 1: Caller is the active V3 borrow pool (outer flash swap callback)
         if (_activeV3BorrowPool != address(0) && msg.sender == _activeV3BorrowPool) {
-            _executeV3ToV3Logic(amount0Delta, amount1Delta, data);
+            ArbParams memory params = abi.decode(data, (ArbParams));
+            if (params.arbType == ArbType.V3_TO_V2) {
+                _executeV3ToV2Logic(amount0Delta, amount1Delta, params);
+            } else {
+                _executeV3ToV3Logic(amount0Delta, amount1Delta, params);
+            }
             return;
         }
 
-        // Case 2: Caller is the active V3 target pool (inner swap callback for V2_TO_V3 or V3_TO_V3)
+        // Case 2: Caller is the active V3 target pool (inner swap callback)
         require(_v3Context.expectedPool != address(0) && msg.sender == _v3Context.expectedPool, "FlashArb: Unauthorized V3 callback caller");
         require(!_v3Context.callbackExecuted, "FlashArb: V3 callback already executed");
 
-        // Validate delta combination: one must be strictly positive (amount to pay), one non-positive (amount received)
         require((amount0Delta > 0 && amount1Delta <= 0) || (amount1Delta > 0 && amount0Delta <= 0), "FlashArb: Inconsistent V3 deltas");
 
         uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
         require(amountToPay <= _v3Context.maxAmountToPay, "FlashArb: Amount to pay exceeds borrow");
 
-        // Validate callback data payload against active context
         require(data.length >= 32, "FlashArb: Invalid callback data length");
         address payingToken = abi.decode(data, (address));
         require(payingToken == _v3Context.payingToken, "FlashArb: Invalid paying token");
@@ -417,13 +508,11 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
     function _executeV3ToV3Logic(
         int256 amount0Delta,
         int256 amount1Delta,
-        bytes calldata data
+        ArbParams memory params
     ) internal {
-        ArbParams memory params = abi.decode(data, (ArbParams));
         require(params.arbType == ArbType.V3_TO_V3, "FlashArb: Invalid V3-V3 arb type");
         require(msg.sender == params.poolBorrow, "FlashArb: Callback pool mismatch");
 
-        // Resolve borrowed and repay token
         address borrowedToken;
         address repayToken;
         {
@@ -431,56 +520,16 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
             address b1 = IUniswapV3Pool(params.poolBorrow).token1();
             borrowedToken = params.borrowToken0 ? b0 : b1;
             repayToken = params.borrowToken0 ? b1 : b0;
-
-            // Validate target pool tokens match
-            address targetT0 = IUniswapV3Pool(params.poolTarget).token0();
-            address targetT1 = IUniswapV3Pool(params.poolTarget).token1();
-            require(
-                (targetT0 == borrowedToken && targetT1 == repayToken) ||
-                (targetT0 == repayToken && targetT1 == borrowedToken),
-                "FlashArb: Token mismatch in V3 target pool"
-            );
         }
 
         uint256 amountRequired = params.borrowToken0 ? uint256(amount1Delta) : uint256(amount0Delta);
-
-        // Execute swap on target pool
-        uint256 amountOut;
-        {
-            bool targetZeroForOne = (IUniswapV3Pool(params.poolTarget).token0() == borrowedToken);
-            uint160 targetSqrtLimit = targetZeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341;
-
-            _v3Context = V3SwapContext({
-                expectedPool: params.poolTarget,
-                payingToken: borrowedToken,
-                maxAmountToPay: params.amountBorrow,
-                callbackExecuted: false
-            });
-
-            uint256 balBefore = IERC20(repayToken).balanceOf(address(this));
-
-            IUniswapV3Pool(params.poolTarget).swap(
-                address(this),
-                targetZeroForOne,
-                int256(params.amountBorrow),
-                targetSqrtLimit,
-                abi.encode(borrowedToken)
-            );
-
-            require(_v3Context.callbackExecuted, "FlashArb: Target V3 callback not executed");
-            _v3Context.expectedPool = address(0);
-
-            amountOut = IERC20(repayToken).balanceOf(address(this)) - balBefore;
-        }
+        uint256 amountOut = _executeV3TargetSwap(params.poolTarget, borrowedToken, repayToken, params.amountBorrow);
 
         require(amountOut > amountRequired, "FlashArb: V3-V3 arb unprofitable");
         uint256 netProfit = amountOut - amountRequired;
         require(netProfit >= params.minProfit, "FlashArb: V3-V3 profit below threshold");
 
-        // Repay the borrow pool (msg.sender)
         IERC20(repayToken).safeTransfer(msg.sender, amountRequired);
-
-        // Handle validator tip and transfer net profit
         netProfit = _handleValidatorTip(params.validatorTip, repayToken, netProfit);
         IERC20(repayToken).safeTransfer(params.recipient, netProfit);
 
@@ -491,6 +540,177 @@ contract FlashArbExecutor is IUniswapV2Callee, IPoolCallee, IUniswapV3SwapCallba
             netProfit,
             params.validatorTip
         );
+    }
+
+    function _executeV3ToV2Logic(
+        int256 amount0Delta,
+        int256 amount1Delta,
+        ArbParams memory params
+    ) internal {
+        require(params.arbType == ArbType.V3_TO_V2, "FlashArb: Invalid V3-V2 arb type");
+        require(msg.sender == params.poolBorrow, "FlashArb: Callback pool mismatch");
+
+        address borrowedToken;
+        address repayToken;
+        {
+            address b0 = IUniswapV3Pool(params.poolBorrow).token0();
+            address b1 = IUniswapV3Pool(params.poolBorrow).token1();
+            borrowedToken = params.borrowToken0 ? b0 : b1;
+            repayToken = params.borrowToken0 ? b1 : b0;
+
+            address targetT0 = IUniswapV2Pair(params.poolTarget).token0();
+            address targetT1 = IUniswapV2Pair(params.poolTarget).token1();
+            require(
+                (targetT0 == borrowedToken && targetT1 == repayToken) ||
+                (targetT0 == repayToken && targetT1 == borrowedToken),
+                "FlashArb: Token mismatch in target V2 pool"
+            );
+        }
+
+        uint256 amountRequired = params.borrowToken0 ? uint256(amount1Delta) : uint256(amount0Delta);
+        uint256 amountOut = _executeTargetSwap(params.poolTarget, borrowedToken, params.amountBorrow);
+
+        require(amountOut > amountRequired, "FlashArb: V3-V2 arb unprofitable");
+        uint256 netProfit = amountOut - amountRequired;
+        require(netProfit >= params.minProfit, "FlashArb: V3-V2 profit below threshold");
+
+        IERC20(repayToken).safeTransfer(msg.sender, amountRequired);
+        netProfit = _handleValidatorTip(params.validatorTip, repayToken, netProfit);
+        IERC20(repayToken).safeTransfer(params.recipient, netProfit);
+
+        emit ArbitrageExecuted(
+            params.poolBorrow,
+            params.poolTarget,
+            repayToken,
+            netProfit,
+            params.validatorTip
+        );
+    }
+
+    /// @notice Helper executing exact-input swap against an arbitrary Uniswap V3 compatible pool
+    function _executeV3TargetSwap(
+        address targetPool,
+        address borrowedToken,
+        address repayToken,
+        uint256 amountBorrow
+    ) internal returns (uint256 amountOut) {
+        address v3T0 = IUniswapV3Pool(targetPool).token0();
+        address v3T1 = IUniswapV3Pool(targetPool).token1();
+        require(
+            (v3T0 == borrowedToken && v3T1 == repayToken) ||
+            (v3T0 == repayToken && v3T1 == borrowedToken),
+            "FlashArb: Token mismatch in target V3 pool"
+        );
+
+        require(_v3Context.expectedPool == address(0), "FlashArb: Active V3 swap in progress");
+
+        bool targetZeroForOne = (v3T0 == borrowedToken);
+        uint160 targetSqrtLimit = targetZeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341;
+
+        _v3Context = V3SwapContext({
+            expectedPool: targetPool,
+            payingToken: borrowedToken,
+            maxAmountToPay: amountBorrow,
+            callbackExecuted: false
+        });
+
+        uint256 balBefore = IERC20(repayToken).balanceOf(address(this));
+        IUniswapV3Pool(targetPool).swap(
+            address(this),
+            targetZeroForOne,
+            int256(amountBorrow),
+            targetSqrtLimit,
+            abi.encode(borrowedToken)
+        );
+
+        require(_v3Context.callbackExecuted, "FlashArb: Target V3 callback not executed");
+        delete _v3Context;
+
+        amountOut = IERC20(repayToken).balanceOf(address(this)) - balBefore;
+    }
+
+    /// @notice Uniswap V4 Flash Accounting unlockCallback
+    function unlockCallback(bytes calldata data) external override returns (bytes memory) {
+        require(msg.sender == poolManager, "FlashArb: Unauthorized V4 callback");
+        require(_activeV4Borrow, "FlashArb: No active V4 execution");
+
+        V4ArbParams memory params = abi.decode(data, (V4ArbParams));
+
+        address borrowedToken = params.borrowToken0 ? params.v4KeyBorrow.currency0 : params.v4KeyBorrow.currency1;
+        address repayToken = params.borrowToken0 ? params.v4KeyBorrow.currency1 : params.v4KeyBorrow.currency0;
+
+        // 1. Swap on V4 borrow pool: exact output (we want amountBorrow of borrowedToken)
+        bool zeroForOne = !params.borrowToken0;
+        uint160 sqrtLimit = zeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341;
+
+        int256 delta = IPoolManager(poolManager).swap(
+            params.v4KeyBorrow,
+            IPoolManager.SwapParams({
+                zeroForOne: zeroForOne,
+                amountSpecified: -int256(params.amountBorrow),
+                sqrtPriceLimitX96: sqrtLimit
+            }),
+            ""
+        );
+
+        // Required repayment amount in repayToken
+        uint256 amountRequired = params.borrowToken0
+            ? uint256(uint128(-int128(delta)))
+            : uint256(uint128(-int128(delta >> 128)));
+
+        // Take borrowed tokens from PoolManager to this contract
+        IPoolManager(poolManager).take(borrowedToken, address(this), params.amountBorrow);
+
+        // 2. Execute target swap on target venue
+        uint256 amountOut;
+        if (params.arbType == ArbType.V4_TO_V3) {
+            amountOut = _executeV3TargetSwap(params.targetPool, borrowedToken, repayToken, params.amountBorrow);
+        } else if (params.arbType == ArbType.V4_TO_V2) {
+            amountOut = _executeTargetSwap(params.targetPool, borrowedToken, params.amountBorrow);
+        } else {
+            // V4_TO_V4
+            bool targetZeroForOne = (params.v4KeyTarget.currency0 == borrowedToken);
+            uint160 targetLimit = targetZeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341;
+
+            IERC20(borrowedToken).safeTransfer(poolManager, params.amountBorrow);
+            IPoolManager(poolManager).settle(borrowedToken);
+
+            int256 targetDelta = IPoolManager(poolManager).swap(
+                params.v4KeyTarget,
+                IPoolManager.SwapParams({
+                    zeroForOne: targetZeroForOne,
+                    amountSpecified: int256(params.amountBorrow),
+                    sqrtPriceLimitX96: targetLimit
+                }),
+                ""
+            );
+            amountOut = targetZeroForOne
+                ? uint256(uint128(-int128(targetDelta)))
+                : uint256(uint128(-int128(targetDelta >> 128)));
+            IPoolManager(poolManager).take(repayToken, address(this), amountOut);
+        }
+
+        require(amountOut > amountRequired, "FlashArb: V4 arb unprofitable");
+        uint256 netProfit = amountOut - amountRequired;
+        require(netProfit >= params.minProfit, "FlashArb: V4 profit below threshold");
+
+        // 3. Settle debt to PoolManager
+        IERC20(repayToken).safeTransfer(poolManager, amountRequired);
+        IPoolManager(poolManager).settle(repayToken);
+
+        // 4. Handle validator tip and profit
+        netProfit = _handleValidatorTip(params.validatorTip, repayToken, netProfit);
+        IERC20(repayToken).safeTransfer(params.recipient, netProfit);
+
+        emit ArbitrageExecuted(
+            address(uint160(uint256(keccak256(abi.encode(params.v4KeyBorrow))))),
+            params.targetPool != address(0) ? params.targetPool : address(uint160(uint256(keccak256(abi.encode(params.v4KeyTarget))))),
+            repayToken,
+            netProfit,
+            params.validatorTip
+        );
+
+        return "";
     }
 
     function _resolveTokens(address pool, bool borrowToken0) internal view returns (address borrowed, address repay) {

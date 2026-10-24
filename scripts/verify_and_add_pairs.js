@@ -95,14 +95,17 @@ async function main() {
       }
 
       // Filter for Base chain, matching symbol, supported DEX, >= $2,000 liquidity
-      const basePools = data.pairs.filter(p => 
-        p.chainId?.toLowerCase() === "base" &&
-        p.baseToken?.symbol?.toUpperCase() === sym &&
-        SUPPORTED_FLASH_DEXES.has((p.dexId || "").toLowerCase()) &&
-        p.pairAddress &&
-        ethers.isAddress(p.pairAddress) &&
-        (p.liquidity?.usd || 0) >= 2000
-      );
+      const basePools = data.pairs.filter(p => {
+        const isV4 = p.labels?.includes("v4") || (p.pairAddress && p.pairAddress.length === 66);
+        return (
+          p.chainId?.toLowerCase() === "base" &&
+          p.baseToken?.symbol?.toUpperCase() === sym &&
+          SUPPORTED_FLASH_DEXES.has((p.dexId || "").toLowerCase()) &&
+          p.pairAddress &&
+          (ethers.isAddress(p.pairAddress) || isV4) &&
+          (p.liquidity?.usd || 0) >= 2000
+        );
+      });
 
       if (basePools.length < 2) {
         console.log(`  ⚠ Insufficient multi-DEX pools for ${sym} on Base (found ${basePools.length} supported pools with >=$2k liq).`);
@@ -126,10 +129,11 @@ async function main() {
           continue;
         }
 
-        // Find at least 2 pools on different DEXes
+        // Find at least 2 pools on different DEXes (distinguish Uniswap V4 from V3/V2)
         const uniqueDexMap = new Map();
         for (const p of sameQuotePools) {
-          const normDex = normalizeDex(p.dexId);
+          const isV4 = p.labels?.includes("v4") || (p.pairAddress && p.pairAddress.length === 66);
+          const normDex = isV4 ? "uniswap-v4" : normalizeDex(p.dexId);
           if (!uniqueDexMap.has(normDex)) {
             uniqueDexMap.set(normDex, p);
           }
@@ -143,8 +147,11 @@ async function main() {
         const poolA_Cand = dexList[0];
         const poolB_Cand = dexList[1];
 
-        const dexAName = normalizeDex(poolA_Cand.dexId);
-        const dexBName = normalizeDex(poolB_Cand.dexId);
+        const isV4_A = poolA_Cand.labels?.includes("v4") || (poolA_Cand.pairAddress && poolA_Cand.pairAddress.length === 66);
+        const isV4_B = poolB_Cand.labels?.includes("v4") || (poolB_Cand.pairAddress && poolB_Cand.pairAddress.length === 66);
+
+        const dexAName = isV4_A ? "uniswap-v4" : normalizeDex(poolA_Cand.dexId);
+        const dexBName = isV4_B ? "uniswap-v4" : normalizeDex(poolB_Cand.dexId);
 
         console.log(`  ✨ Found candidate route for ${pairKey}: ${dexAName} ($${(poolA_Cand.liquidity?.usd || 0).toLocaleString()}) vs ${dexBName} ($${(poolB_Cand.liquidity?.usd || 0).toLocaleString()})`);
 
@@ -197,7 +204,8 @@ async function main() {
           isSmallPond: isSweetSpot,
           poolA: {
             dex: dexAName,
-            pairAddress: ethers.getAddress(poolA_Cand.pairAddress),
+            pairAddress: infoA.type === "V4" ? poolA_Cand.pairAddress : ethers.getAddress(poolA_Cand.pairAddress),
+            poolKey: infoA.type === "V4" ? infoA.poolKey : undefined,
             priceUsd: poolA_Cand.priceUsd,
             liquidityUsd: poolA_Cand.liquidity?.usd || 0,
             feePercent: `${feeA.toFixed(2)}%`,
@@ -205,7 +213,8 @@ async function main() {
           },
           poolB: {
             dex: dexBName,
-            pairAddress: ethers.getAddress(poolB_Cand.pairAddress),
+            pairAddress: infoB.type === "V4" ? poolB_Cand.pairAddress : ethers.getAddress(poolB_Cand.pairAddress),
+            poolKey: infoB.type === "V4" ? infoB.poolKey : undefined,
             priceUsd: poolB_Cand.priceUsd,
             liquidityUsd: poolB_Cand.liquidity?.usd || 0,
             feePercent: `${feeB.toFixed(2)}%`,

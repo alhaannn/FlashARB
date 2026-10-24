@@ -133,15 +133,118 @@ export function parseTokenUnits(amountStr, decimals = 18) {
 const poolProtocolCache = new Map();
 
 /**
- * Detects whether a liquidity pool is Uniswap V2 (constant product) or Uniswap V3 (concentrated liquidity).
+ * Queries Uniswap V4 PoolManager directly via extsload to fetch real-time slot0 and liquidity.
+ *
+ * @param {string|object} poolKeyOrId - V4 PoolKey struct or 32-byte poolId
+ * @param {ethers.Provider} provider - Ethers JSON-RPC provider
+ * @param {string} poolManagerAddress - Canonical PoolManager address
+ */
+export async function getV4PoolProtocolInfo(poolKeyOrId, provider, poolManagerAddress = "0x498581fF718922c3f8e6A244956aF099B2652b2b") {
+  if (!poolKeyOrId || !provider) return { type: "UNKNOWN" };
+
+  let poolId;
+  let poolKey = null;
+
+  if (typeof poolKeyOrId === "string" && poolKeyOrId.length === 66 && poolKeyOrId.startsWith("0x")) {
+    poolId = poolKeyOrId;
+  } else if (typeof poolKeyOrId === "object") {
+    if (poolKeyOrId.poolKey) {
+      poolKey = { ...poolKeyOrId.poolKey };
+    } else if (poolKeyOrId.currency0 || poolKeyOrId.token0) {
+      poolKey = {
+        currency0: ethers.getAddress(poolKeyOrId.currency0 || poolKeyOrId.token0),
+        currency1: ethers.getAddress(poolKeyOrId.currency1 || poolKeyOrId.token1),
+        fee: Number(poolKeyOrId.fee || poolKeyOrId.feeMillionths || 3000),
+        tickSpacing: Number(poolKeyOrId.tickSpacing || 60),
+        hooks: ethers.getAddress(poolKeyOrId.hooks || ethers.ZeroAddress)
+      };
+    } else if (poolKeyOrId.pairAddress && poolKeyOrId.pairAddress.length === 66) {
+      poolId = poolKeyOrId.pairAddress;
+    }
+
+    if (poolKey) {
+      if (BigInt(poolKey.currency0) > BigInt(poolKey.currency1)) {
+        const tmp = poolKey.currency0;
+        poolKey.currency0 = poolKey.currency1;
+        poolKey.currency1 = tmp;
+      }
+      const abiCoder = new ethers.AbiCoder();
+      const encoded = abiCoder.encode(
+        ["address", "address", "uint24", "int24", "address"],
+        [poolKey.currency0, poolKey.currency1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks]
+      );
+      poolId = ethers.keccak256(encoded);
+    }
+  }
+
+  if (!poolId) return { type: "UNKNOWN" };
+
+  try {
+    const pm = new ethers.Contract(
+      poolManagerAddress,
+      ["function extsload(bytes32 slot) external view returns (bytes32 value)"],
+      provider
+    );
+    const poolsSlot = ethers.zeroPadValue(ethers.toBeHex(6), 32);
+    const baseSlot = ethers.keccak256(ethers.concat([poolId, poolsSlot]));
+
+    const [slot0Data, liqData] = await Promise.all([
+      pm.extsload(baseSlot),
+      pm.extsload(ethers.toBeHex(BigInt(baseSlot) + 3n, 32))
+    ]);
+
+    const slot0Big = BigInt(slot0Data);
+    const sqrtPriceX96 = slot0Big & ((1n << 160n) - 1n);
+    if (sqrtPriceX96 === 0n) {
+      return { type: "UNKNOWN" };
+    }
+    const tickRaw = (slot0Big >> 160n) & 0xffffffn;
+    const tick = (tickRaw & 0x800000n) ? Number(tickRaw - 0x1000000n) : Number(tickRaw);
+    const liquidity = BigInt(liqData) & ((1n << 128n) - 1n);
+
+    return {
+      type: "V4",
+      poolId,
+      poolKey,
+      address: poolManagerAddress,
+      token0: poolKey ? poolKey.currency0 : undefined,
+      token1: poolKey ? poolKey.currency1 : undefined,
+      sqrtPriceX96,
+      tick,
+      liquidity,
+      feeMillionths: poolKey ? poolKey.fee : 3000
+    };
+  } catch {
+    return { type: "UNKNOWN" };
+  }
+}
+
+/**
+ * Detects whether a liquidity pool is Uniswap V2 (constant product), Uniswap V3 (concentrated liquidity), or Uniswap V4.
  * Caches the protocol type to eliminate unnecessary RPC overhead.
  *
- * @param {string} poolAddress - On-chain liquidity pool address
+ * @param {string|object} poolAddress - On-chain liquidity pool address, V4 PoolKey object, or 32-byte poolId
  * @param {ethers.Provider} provider - Ethers JSON-RPC provider
- * @returns {Promise<{ type: "V2"|"V3"|"UNKNOWN", address?: string, token0?: string, token1?: string, reserve0?: bigint, reserve1?: bigint, sqrtPriceX96?: bigint, tick?: number, liquidity?: bigint }>}
+ * @returns {Promise<{ type: "V2"|"V3"|"V4"|"UNKNOWN", address?: string, token0?: string, token1?: string, reserve0?: bigint, reserve1?: bigint, sqrtPriceX96?: bigint, tick?: number, liquidity?: bigint, feeMillionths?: number, poolKey?: object, poolId?: string }>}
  */
 export async function getPoolProtocolInfo(poolAddress, provider) {
-  if (!poolAddress || !ethers.isAddress(poolAddress) || !provider) {
+  if (!poolAddress || !provider) {
+    return { type: "UNKNOWN" };
+  }
+
+  // Check if it's a Uniswap V4 pool (object or 32-byte hex string)
+  if (typeof poolAddress === "object") {
+    if (poolAddress.type === "V4" || poolAddress.currency0 || poolAddress.poolKey || (poolAddress.pairAddress && poolAddress.pairAddress.length === 66)) {
+      return getV4PoolProtocolInfo(poolAddress, provider);
+    }
+    if (poolAddress.pairAddress && ethers.isAddress(poolAddress.pairAddress)) {
+      poolAddress = poolAddress.pairAddress;
+    }
+  } else if (typeof poolAddress === "string" && poolAddress.length === 66 && poolAddress.startsWith("0x")) {
+    return getV4PoolProtocolInfo(poolAddress, provider);
+  }
+
+  if (!ethers.isAddress(poolAddress)) {
     return { type: "UNKNOWN" };
   }
 

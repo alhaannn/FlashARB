@@ -31,7 +31,11 @@ const VERIFIED_TOKENS = {
   "0x9a26f5433671751c3276a065f57e5a02d2817973": { name: "Keyboard Cat", symbol: "KEYCAT" },
   "0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b": { name: "Virtuals", symbol: "VIRTUAL" },
   "0xe3086852a4b125803c815a158249ae468a3254ca": { name: "mfercoin", symbol: "$mfer" },
-  "0x311935cd47aab3f384da9ec6a7d383de7feee327": { name: "Solana (Base)", symbol: "SOL" }
+  "0x311935cd47aab3f384da9ec6a7d383de7feee327": { name: "Solana (Base)", symbol: "SOL" },
+  "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf": { name: "Coinbase Wrapped BTC", symbol: "cbBTC" },
+  "0xbaa5cc21fd487b8fcc2f632f3f4e8d37262a0842": { name: "Morpho Token", symbol: "MORPHO" },
+  "0x6985884c43924282a4f2926715c7993b2e80908a": { name: "LayerZero Token", symbol: "ZRO" },
+  "0x7a6341cb83d47a46e15d862892976dc3c178bf72": { name: "Coinbase Wrapped Zcash", symbol: "cbZEC" }
 };
 
 export async function checkTokenSafety(tokenAddress, chain = "base") {

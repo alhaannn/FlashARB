@@ -710,8 +710,14 @@ async function evaluateSinglePair(currentPair, chain) {
     return;
   }
 
-  const poolAAddr = ethers.getAddress(currentPair.poolA.pairAddress);
-  const poolBAddr = ethers.getAddress(currentPair.poolB.pairAddress);
+  const poolAIdentifier = (currentPair.poolA.type === "V4" || (currentPair.poolA.pairAddress && currentPair.poolA.pairAddress.length === 66))
+    ? (currentPair.poolA.poolKey || currentPair.poolA.pairAddress)
+    : ethers.getAddress(currentPair.poolA.pairAddress);
+
+  const poolBIdentifier = (currentPair.poolB.type === "V4" || (currentPair.poolB.pairAddress && currentPair.poolB.pairAddress.length === 66))
+    ? (currentPair.poolB.poolKey || currentPair.poolB.pairAddress)
+    : ethers.getAddress(currentPair.poolB.pairAddress);
+
   const provider = getProvider(chain);
 
   // Live on-chain reserve check & route optimization (Fix Finding C: real on-chain reserves, no synthetic math)
@@ -722,8 +728,8 @@ async function evaluateSinglePair(currentPair, chain) {
   let poolAInfo, poolBInfo;
   try {
     [poolAInfo, poolBInfo] = await Promise.all([
-      getPoolProtocolInfo(poolAAddr, provider),
-      getPoolProtocolInfo(poolBAddr, provider)
+      getPoolProtocolInfo(poolAIdentifier, provider),
+      getPoolProtocolInfo(poolBIdentifier, provider)
     ]);
   } catch (reserveErr) {
     logEvent("AUTOPILOT", "warn", `On-chain pool query failed for ${currentPair.symbol}: ${reserveErr.message}`);
@@ -753,7 +759,7 @@ async function evaluateSinglePair(currentPair, chain) {
 
     routeOpt = evaluateTwoPoolArbitrage(
       {
-        pairAddress: poolAAddr,
+        pairAddress: poolAInfo.address,
         token0: poolAInfo.token0,
         token1: poolAInfo.token1,
         reserve0: poolAInfo.reserve0,
@@ -761,7 +767,7 @@ async function evaluateSinglePair(currentPair, chain) {
         feeBps: feeA_Bps
       },
       {
-        pairAddress: poolBAddr,
+        pairAddress: poolBInfo.address,
         token0: poolBInfo.token0,
         token1: poolBInfo.token1,
         reserve0: poolBInfo.reserve0,
@@ -779,10 +785,12 @@ async function evaluateSinglePair(currentPair, chain) {
       logEvent("AUTOPILOT", "info", `[V2-to-V2] ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex}): Raw spread ${grossSpreadPct.toFixed(2)}% is within combined pool fees (${combinedFeePct}%: ${(feeA_Bps/100).toFixed(2)}% + ${(feeB_Bps/100).toFixed(2)}%) & slippage`);
     }
   }
-  // Case 2: One is Uniswap V2 and the other is Uniswap V3 / Slipstream (Cross-Type CLAMM)
+  // Case 2: One is Uniswap V2 and the other is Uniswap V3 / Slipstream (Bidirectional Cross-Type CLAMM)
   else if ((poolAInfo.type === "V2" && poolBInfo.type === "V3") || (poolAInfo.type === "V3" && poolBInfo.type === "V2")) {
     const v2Pool = poolAInfo.type === "V2" ? poolAInfo : poolBInfo;
     const v3Pool = poolAInfo.type === "V3" ? poolAInfo : poolBInfo;
+    const v2Dex = poolAInfo.type === "V2" ? currentPair.poolA.dex : currentPair.poolB.dex;
+    const v3Dex = poolAInfo.type === "V3" ? currentPair.poolA.dex : currentPair.poolB.dex;
 
     feeA_Bps = poolAInfo.type === "V2" ? (poolAInfo.feeBps || 30) : Math.round((poolAInfo.feeMillionths || 3000) / 100);
     feeB_Bps = poolBInfo.type === "V2" ? (poolBInfo.feeBps || 30) : Math.round((poolBInfo.feeMillionths || 3000) / 100);
@@ -800,34 +808,70 @@ async function evaluateSinglePair(currentPair, chain) {
       if (minP > 0) grossSpreadPct = (Math.abs(pV2 - pV3) / minP) * 100;
     }
 
-    const sizing = V3QuoterEngine.findOptimalCrossV2V3BorrowBest(
-      {
-        reserve0: v2Pool.reserve0,
-        reserve1: v2Pool.reserve1
-      },
-      {
-        sqrtPriceX96: v3Pool.sqrtPriceX96,
-        liquidity: v3Pool.liquidity
-      },
-      {
-        feeBpsV2,
-        feeV3Millionths
-      }
+    // Direction 1: V2 (borrow) -> V3 (target sell)
+    const sizingV2ToV3 = V3QuoterEngine.findOptimalCrossV2V3BorrowBest(
+      { reserve0: v2Pool.reserve0, reserve1: v2Pool.reserve1 },
+      { sqrtPriceX96: v3Pool.sqrtPriceX96, liquidity: v3Pool.liquidity },
+      { feeBpsV2, feeV3Millionths }
     );
 
-    if (sizing.isProfitable && sizing.maxProfit > 0n) {
-      const borrowToken0 = sizing.borrowToken0;
-      routeOpt = {
-        isV2ToV3: true,
-        borrowPool: v2Pool.address,
-        targetPool: v3Pool.address,
-        borrowToken: borrowToken0 ? v2Pool.token0 : v2Pool.token1,
-        repayToken: borrowToken0 ? v2Pool.token1 : v2Pool.token0,
-        borrowToken0,
-        optimalBorrow: sizing.optimalBorrow,
-        maxProfit: sizing.maxProfit,
-        isProfitable: true
-      };
+    // Direction 2: V3 (borrow) -> V2 (target sell)
+    const sizingV3ToV2 = V3QuoterEngine.findOptimalV3ToV2BorrowBest(
+      v3Pool,
+      v2Pool,
+      { feeBpsV2, feeV3Millionths }
+    );
+
+    let chosenSizing = null;
+    let isV3ToV2 = false;
+
+    if (sizingV2ToV3.isProfitable && sizingV3ToV2.isProfitable) {
+      if (sizingV3ToV2.maxProfit > sizingV2ToV3.maxProfit) {
+        chosenSizing = sizingV3ToV2;
+        isV3ToV2 = true;
+      } else {
+        chosenSizing = sizingV2ToV3;
+        isV3ToV2 = false;
+      }
+    } else if (sizingV3ToV2.isProfitable) {
+      chosenSizing = sizingV3ToV2;
+      isV3ToV2 = true;
+    } else if (sizingV2ToV3.isProfitable) {
+      chosenSizing = sizingV2ToV3;
+      isV3ToV2 = false;
+    }
+
+    if (chosenSizing && chosenSizing.maxProfit > 0n) {
+      const borrowToken0 = chosenSizing.borrowToken0;
+      if (isV3ToV2) {
+        routeOpt = {
+          isV3ToV2: true,
+          borrowPool: v3Pool.address,
+          targetPool: v2Pool.address,
+          borrowDex: v3Dex,
+          targetDex: v2Dex,
+          borrowToken: borrowToken0 ? v3Pool.token0 : v3Pool.token1,
+          repayToken: borrowToken0 ? v3Pool.token1 : v3Pool.token0,
+          borrowToken0,
+          optimalBorrow: chosenSizing.optimalBorrow,
+          maxProfit: chosenSizing.maxProfit,
+          isProfitable: true
+        };
+      } else {
+        routeOpt = {
+          isV2ToV3: true,
+          borrowPool: v2Pool.address,
+          targetPool: v3Pool.address,
+          borrowDex: v2Dex,
+          targetDex: v3Dex,
+          borrowToken: borrowToken0 ? v2Pool.token0 : v2Pool.token1,
+          repayToken: borrowToken0 ? v2Pool.token1 : v2Pool.token0,
+          borrowToken0,
+          optimalBorrow: chosenSizing.optimalBorrow,
+          maxProfit: chosenSizing.maxProfit,
+          isProfitable: true
+        };
+      }
 
       [borrowDecimals, repayDecimals] = await Promise.all([
         getTokenDecimals(routeOpt.borrowToken, provider),
@@ -838,7 +882,7 @@ async function evaluateSinglePair(currentPair, chain) {
       logEvent("AUTOPILOT", "info", `[Cross V2-V3] ${currentPair.symbol}: Spread within combined pool fees (${totalFeePercent}%) & slippage threshold`);
     }
   }
-  // Case 3: Both are Uniswap V3 / Slipstream / Pancake V3 pools (Solution 6: V3-to-V3 Concentrated Liquidity Arbitrage)
+  // Case 3: Both are Uniswap V3 / Slipstream / Pancake V3 pools (V3-to-V3 Concentrated Liquidity Arbitrage)
   else if (poolAInfo.type === "V3" && poolBInfo.type === "V3") {
     feeA_Bps = Math.round((poolAInfo.feeMillionths || 3000) / 100);
     feeB_Bps = Math.round((poolBInfo.feeMillionths || 3000) / 100);
@@ -888,6 +932,157 @@ async function evaluateSinglePair(currentPair, chain) {
     } else {
       const totalFeePercent = (((poolAInfo.feeMillionths || 3000) + (poolBInfo.feeMillionths || 3000)) / 10000).toFixed(2);
       logEvent("AUTOPILOT", "info", `[V3-to-V3] ${currentPair.symbol} (${currentPair.poolA.dex} vs ${currentPair.poolB.dex}): Spread within combined pool fees (${totalFeePercent}%) & slippage threshold`);
+    }
+  }
+  // Case 4: Both are Uniswap V4 pools (Intra-V4 fee tier / hook divergence, 0% flash loan fee)
+  else if (poolAInfo.type === "V4" && poolBInfo.type === "V4") {
+    feeA_Bps = Math.round((poolAInfo.feeMillionths || 3000) / 100);
+    feeB_Bps = Math.round((poolBInfo.feeMillionths || 3000) / 100);
+    feeAPct = (poolAInfo.feeMillionths || 3000) / 10000;
+    feeBPct = (poolBInfo.feeMillionths || 3000) / 10000;
+
+    if (poolAInfo.sqrtPriceX96 > 0n && poolBInfo.sqrtPriceX96 > 0n) {
+      const sqrtA = Number(poolAInfo.sqrtPriceX96) / (2 ** 96);
+      const sqrtB = Number(poolBInfo.sqrtPriceX96) / (2 ** 96);
+      const pA = sqrtA * sqrtA;
+      const pB = sqrtB * sqrtB;
+      const minP = Math.min(pA, pB);
+      if (minP > 0) grossSpreadPct = (Math.abs(pA - pB) / minP) * 100;
+    }
+
+    logEvent("AUTOPILOT", "info", `[V4-to-V4] 🔍 Intra-V4 Arbitrage for ${currentPair.symbol} (0% Flash Fee) | Pool A: ${feeAPct.toFixed(2)}%, liq ${poolAInfo.liquidity} | Pool B: ${feeBPct.toFixed(2)}%, liq ${poolBInfo.liquidity}`);
+
+    const sizing = V3QuoterEngine.findOptimalV3ToV3BorrowBest(poolAInfo, poolBInfo);
+
+    if (sizing.isProfitable && sizing.maxProfit > 0n) {
+      const borrowToken0 = sizing.borrowToken0;
+      const bPool = sizing.borrowPoolIsA ? poolAInfo : poolBInfo;
+      const tPool = sizing.borrowPoolIsA ? poolBInfo : poolAInfo;
+      const bDex = sizing.borrowPoolIsA ? currentPair.poolA.dex : currentPair.poolB.dex;
+      const tDex = sizing.borrowPoolIsA ? currentPair.poolB.dex : currentPair.poolA.dex;
+
+      routeOpt = {
+        isV4: true,
+        targetDexType: 3, // V4
+        v4KeyBorrow: bPool.poolKey,
+        targetV4Key: tPool.poolKey,
+        targetPool: ethers.ZeroAddress,
+        borrowPool: bPool.poolId,
+        borrowDex: bDex,
+        targetDex: tDex,
+        borrowToken: borrowToken0 ? bPool.token0 : bPool.token1,
+        repayToken: borrowToken0 ? bPool.token1 : bPool.token0,
+        borrowToken0,
+        optimalBorrow: sizing.optimalBorrow,
+        maxProfit: sizing.maxProfit,
+        isProfitable: true
+      };
+
+      [borrowDecimals, repayDecimals] = await Promise.all([
+        getTokenDecimals(routeOpt.borrowToken, provider),
+        getTokenDecimals(routeOpt.repayToken, provider)
+      ]);
+    }
+  }
+  // Case 5: Uniswap V4 <-> Uniswap V3 / Slipstream / Pancake V3 (0% V4 flash loan fee)
+  else if ((poolAInfo.type === "V4" && poolBInfo.type === "V3") || (poolAInfo.type === "V3" && poolBInfo.type === "V4")) {
+    const v4Pool = poolAInfo.type === "V4" ? poolAInfo : poolBInfo;
+    const v3Pool = poolAInfo.type === "V3" ? poolAInfo : poolBInfo;
+    const v4Dex = poolAInfo.type === "V4" ? currentPair.poolA.dex : currentPair.poolB.dex;
+    const v3Dex = poolAInfo.type === "V3" ? currentPair.poolA.dex : currentPair.poolB.dex;
+
+    feeA_Bps = Math.round((poolAInfo.feeMillionths || 3000) / 100);
+    feeB_Bps = Math.round((poolBInfo.feeMillionths || 3000) / 100);
+    feeAPct = feeA_Bps / 100;
+    feeBPct = feeB_Bps / 100;
+
+    if (v4Pool.sqrtPriceX96 > 0n && v3Pool.sqrtPriceX96 > 0n) {
+      const sqrtV4 = Number(v4Pool.sqrtPriceX96) / (2 ** 96);
+      const sqrtV3 = Number(v3Pool.sqrtPriceX96) / (2 ** 96);
+      const pV4 = sqrtV4 * sqrtV4;
+      const pV3 = sqrtV3 * sqrtV3;
+      const minP = Math.min(pV4, pV3);
+      if (minP > 0) grossSpreadPct = (Math.abs(pV4 - pV3) / minP) * 100;
+    }
+
+    logEvent("AUTOPILOT", "info", `[V4-to-V3] 🔍 Cross-Generational Arb for ${currentPair.symbol} | V4 (${v4Dex}) vs V3 (${v3Dex}) (0% Flash Fee)`);
+
+    const opt0 = V3QuoterEngine.findOptimalV4ToV3Borrow(v4Pool, v3Pool, { borrowToken0: true });
+    const opt1 = V3QuoterEngine.findOptimalV4ToV3Borrow(v4Pool, v3Pool, { borrowToken0: false });
+    const sizing = (opt1.isProfitable && opt1.maxProfit > opt0.maxProfit) ? opt1 : opt0;
+
+    if (sizing.isProfitable && sizing.maxProfit > 0n) {
+      const borrowToken0 = sizing.borrowToken0;
+      routeOpt = {
+        isV4: true,
+        targetDexType: 1, // V3
+        v4KeyBorrow: v4Pool.poolKey,
+        targetPool: v3Pool.address,
+        borrowPool: v4Pool.poolId,
+        borrowDex: v4Dex,
+        targetDex: v3Dex,
+        borrowToken: borrowToken0 ? v4Pool.token0 : v4Pool.token1,
+        repayToken: borrowToken0 ? v4Pool.token1 : v4Pool.token0,
+        borrowToken0,
+        optimalBorrow: sizing.optimalBorrow,
+        maxProfit: sizing.maxProfit,
+        isProfitable: true
+      };
+
+      [borrowDecimals, repayDecimals] = await Promise.all([
+        getTokenDecimals(routeOpt.borrowToken, provider),
+        getTokenDecimals(routeOpt.repayToken, provider)
+      ]);
+    }
+  }
+  // Case 6: Uniswap V4 <-> Uniswap V2 / Aerodrome V2 (0% V4 flash loan fee)
+  else if ((poolAInfo.type === "V4" && poolBInfo.type === "V2") || (poolAInfo.type === "V2" && poolBInfo.type === "V4")) {
+    const v4Pool = poolAInfo.type === "V4" ? poolAInfo : poolBInfo;
+    const v2Pool = poolAInfo.type === "V2" ? poolAInfo : poolBInfo;
+    const v4Dex = poolAInfo.type === "V4" ? currentPair.poolA.dex : currentPair.poolB.dex;
+    const v2Dex = poolAInfo.type === "V2" ? currentPair.poolA.dex : currentPair.poolB.dex;
+
+    feeA_Bps = poolAInfo.type === "V4" ? Math.round((poolAInfo.feeMillionths || 3000) / 100) : (poolAInfo.feeBps || 30);
+    feeB_Bps = poolBInfo.type === "V4" ? Math.round((poolBInfo.feeMillionths || 3000) / 100) : (poolBInfo.feeBps || 30);
+    feeAPct = feeA_Bps / 100;
+    feeBPct = feeB_Bps / 100;
+
+    if (v2Pool.reserve0 > 0n && v4Pool.sqrtPriceX96 > 0n) {
+      const pV2 = Number(v2Pool.reserve1) / Number(v2Pool.reserve0);
+      const sqrtP = Number(v4Pool.sqrtPriceX96) / (2 ** 96);
+      const pV4 = sqrtP * sqrtP;
+      const minP = Math.min(pV2, pV4);
+      if (minP > 0) grossSpreadPct = (Math.abs(pV2 - pV4) / minP) * 100;
+    }
+
+    logEvent("AUTOPILOT", "info", `[V4-to-V2] 🔍 Cross-Generational Arb for ${currentPair.symbol} | V4 (${v4Dex}) vs V2 (${v2Dex}) (0% Flash Fee)`);
+
+    const opt0 = V3QuoterEngine.findOptimalV4ToV2Borrow(v4Pool, v2Pool, { feeBpsV2: v2Pool.feeBps || 30, borrowToken0: true });
+    const opt1 = V3QuoterEngine.findOptimalV4ToV2Borrow(v4Pool, v2Pool, { feeBpsV2: v2Pool.feeBps || 30, borrowToken0: false });
+    const sizing = (opt1.isProfitable && opt1.maxProfit > opt0.maxProfit) ? opt1 : opt0;
+
+    if (sizing.isProfitable && sizing.maxProfit > 0n) {
+      const borrowToken0 = sizing.borrowToken0;
+      routeOpt = {
+        isV4: true,
+        targetDexType: 2, // V2
+        v4KeyBorrow: v4Pool.poolKey,
+        targetPool: v2Pool.address,
+        borrowPool: v4Pool.poolId,
+        borrowDex: v4Dex,
+        targetDex: v2Dex,
+        borrowToken: borrowToken0 ? v4Pool.token0 : v4Pool.token1,
+        repayToken: borrowToken0 ? v4Pool.token1 : v4Pool.token0,
+        borrowToken0,
+        optimalBorrow: sizing.optimalBorrow,
+        maxProfit: sizing.maxProfit,
+        isProfitable: true
+      };
+
+      [borrowDecimals, repayDecimals] = await Promise.all([
+        getTokenDecimals(routeOpt.borrowToken, provider),
+        getTokenDecimals(routeOpt.repayToken, provider)
+      ]);
     }
   } else {
     logEvent("AUTOPILOT", "info", `Scanned ${currentPair.symbol}: Non-standard pool protocol (${poolAInfo.type}/${poolBInfo.type})`);
@@ -980,10 +1175,40 @@ async function evaluateSinglePair(currentPair, chain) {
     if (minProfitRaw <= 0n) minProfitRaw = 1n;
 
     let methodName = "executeFlashArb";
-    if (routeOpt.isV3ToV3) {
+    let methodArgs = [];
+
+    const dummyV4Key = {
+      currency0: ethers.ZeroAddress,
+      currency1: ethers.ZeroAddress,
+      fee: 0,
+      tickSpacing: 0,
+      hooks: ethers.ZeroAddress
+    };
+
+    if (routeOpt.isV4) {
+      methodName = "executeV4Arbitrage";
+      methodArgs = [
+        routeOpt.v4KeyBorrow,
+        routeOpt.targetDexType,
+        routeOpt.targetPool || ethers.ZeroAddress,
+        routeOpt.targetV4Key || dummyV4Key,
+        routeOpt.optimalBorrow,
+        routeOpt.borrowToken0,
+        minProfitRaw,
+        0n
+      ];
+    } else if (routeOpt.isV3ToV3) {
       methodName = "executeV3ToV3FlashArb";
+      methodArgs = [routeOpt.borrowPool, routeOpt.targetPool, routeOpt.optimalBorrow, routeOpt.borrowToken0, minProfitRaw, 0n];
+    } else if (routeOpt.isV3ToV2) {
+      methodName = "executeV3ToV2FlashArb";
+      methodArgs = [routeOpt.borrowPool, routeOpt.targetPool, routeOpt.optimalBorrow, routeOpt.borrowToken0, minProfitRaw, 0n];
     } else if (routeOpt.isV2ToV3) {
       methodName = "executeV2ToV3FlashArb";
+      methodArgs = [routeOpt.borrowPool, routeOpt.targetPool, routeOpt.optimalBorrow, routeOpt.borrowToken0, minProfitRaw, 0n];
+    } else {
+      methodName = "executeFlashArb";
+      methodArgs = [routeOpt.borrowPool, routeOpt.targetPool, routeOpt.optimalBorrow, routeOpt.borrowToken0, minProfitRaw, 0n];
     }
 
     if (isLive) {
@@ -992,21 +1217,16 @@ async function evaluateSinglePair(currentPair, chain) {
       const EXECUTOR_ABI = [
         "function executeFlashArb(address poolBorrow, address poolTarget, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
         "function executeV2ToV3FlashArb(address poolV2Borrow, address poolV3Target, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
+        "function executeV3ToV2FlashArb(address poolV3Borrow, address poolV2Target, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
         "function executeV3ToV3FlashArb(address poolV3Borrow, address poolV3Target, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
+        "function executeV4Arbitrage((address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) v4KeyBorrow, uint8 targetDexType, address targetPool, (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) targetV4Key, uint256 amountBorrow, bool borrowToken0, uint256 minProfit, uint256 validatorTip) external",
         "event ArbitrageExecuted(address indexed poolBorrow, address indexed poolTarget, address indexed profitToken, uint256 profitAmount, uint256 validatorTip)"
       ];
       const contract = new ethers.Contract(executorAddress, EXECUTOR_ABI, signer);
 
       // Pre-flight staticCall ($0.00 gas)
       try {
-        await contract[methodName].staticCall(
-          routeOpt.borrowPool,
-          routeOpt.targetPool,
-          routeOpt.optimalBorrow,
-          routeOpt.borrowToken0,
-          minProfitRaw,
-          0n
-        );
+        await contract[methodName].staticCall(...methodArgs);
         logEvent("PRE_FLIGHT", "success", `[Pre-Flight PASSED] On-chain state verified profitable! Zero revert risk.`);
         const preflightPassedRecord = {
           id: Date.now(),
@@ -1066,7 +1286,7 @@ async function evaluateSinglePair(currentPair, chain) {
       const trackingResult = await executeAndTrackLifecycle(
         contract,
         methodName,
-        [routeOpt.borrowPool, routeOpt.targetPool, routeOpt.optimalBorrow, routeOpt.borrowToken0, minProfitRaw, 0n],
+        methodArgs,
         {
           onStatusChange: (status, details) => {
             if (status === TxStatus.SUBMITTED) {

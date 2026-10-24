@@ -415,6 +415,110 @@ export class V3QuoterEngine {
     }
     return best;
   }
+
+  /**
+   * Evaluates optimal borrow for V3 (borrow) -> V2 (target sell)
+   */
+  static findOptimalV3ToV2Borrow(v3Pool, v2Pool, options = {}) {
+    const {
+      feeBpsV2 = 30,
+      feeV3Millionths = 3000,
+      borrowToken0 = true
+    } = options;
+
+    const L_V3 = BigInt(v3Pool.liquidity || 0);
+    const sqrtP_V3 = BigInt(v3Pool.sqrtPriceX96 || 0);
+    if (L_V3 <= 0n || sqrtP_V3 <= 0n) return { optimalBorrow: 0n, maxProfit: 0n, isProfitable: false, borrowToken0 };
+
+    const r0_V2 = BigInt(v2Pool.reserve0 || v2Pool.r0 || 0);
+    const r1_V2 = BigInt(v2Pool.reserve1 || v2Pool.r1 || 0);
+    const [reserveIn, reserveOut] = borrowToken0 ? [r0_V2, r1_V2] : [r1_V2, r0_V2];
+    if (reserveIn <= 0n || reserveOut <= 0n) return { optimalBorrow: 0n, maxProfit: 0n, isProfitable: false, borrowToken0 };
+
+    const v3Cap = borrowToken0 ? (L_V3 * Q96) / sqrtP_V3 : (L_V3 * sqrtP_V3) / Q96;
+    const maxCap = reserveIn < v3Cap ? reserveIn : v3Cap;
+    if (maxCap <= 1000n) return { optimalBorrow: 0n, maxProfit: 0n, isProfitable: false, borrowToken0 };
+
+    let low = maxCap > 100000n ? maxCap / 100000n : 10n;
+    let high = maxCap / 4n;
+    if (high <= low) return { optimalBorrow: 0n, maxProfit: 0n, isProfitable: false, borrowToken0 };
+
+    const evaluateProfit = (borrowAmount) => {
+      if (borrowAmount <= 0n || borrowAmount >= maxCap) return -1n;
+      const requiredRepay = V3QuoterEngine.getRequiredRepayment(borrowAmount, sqrtP_V3, L_V3, feeV3Millionths, borrowToken0);
+      if (requiredRepay <= 0n) return -1n;
+
+      const amountInWithFee = borrowAmount * (10000n - BigInt(feeBpsV2));
+      const numerator = amountInWithFee * reserveOut;
+      const denominator = (reserveIn * 10000n) + amountInWithFee;
+      if (denominator <= 0n) return -1n;
+      const amountOut = numerator / denominator;
+
+      if (amountOut <= requiredRepay) return -1n;
+      return amountOut - requiredRepay;
+    };
+
+    for (let i = 0; i < 40; i++) {
+      if (high - low < 100n) break;
+      const m1 = low + (high - low) / 3n;
+      const m2 = high - (high - low) / 3n;
+      const p1 = evaluateProfit(m1);
+      const p2 = evaluateProfit(m2);
+      if (p1 < p2) low = m1;
+      else high = m2;
+    }
+
+    const optimalBorrow = (low + high) / 2n;
+    const maxProfit = evaluateProfit(optimalBorrow);
+    const isProfitable = maxProfit > 0n;
+
+    return {
+      optimalBorrow: isProfitable ? optimalBorrow : 0n,
+      maxProfit: isProfitable ? maxProfit : 0n,
+      isProfitable,
+      borrowToken0
+    };
+  }
+
+  static findOptimalV3ToV2BorrowBest(v3Pool, v2Pool, options = {}) {
+    const opt0 = V3QuoterEngine.findOptimalV3ToV2Borrow(v3Pool, v2Pool, { ...options, borrowToken0: true });
+    const opt1 = V3QuoterEngine.findOptimalV3ToV2Borrow(v3Pool, v2Pool, { ...options, borrowToken0: false });
+    if (opt1.isProfitable && opt1.maxProfit > opt0.maxProfit) return opt1;
+    return opt0;
+  }
+
+  /**
+   * Calculates keccak256 PoolId from Uniswap V4 PoolKey
+   */
+  static computeV4PoolId(poolKey) {
+    const coder = ethers.AbiCoder.defaultAbiCoder();
+    const encoded = coder.encode(
+      ["address", "address", "uint24", "int24", "address"],
+      [poolKey.currency0, poolKey.currency1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks]
+    );
+    return ethers.keccak256(encoded);
+  }
+
+  /**
+   * V4-to-V3 Flash Arbitrage (0% protocol flash fee on V4)
+   */
+  static findOptimalV4ToV3Borrow(v4Pool, v3Pool, options = {}) {
+    return V3QuoterEngine.findOptimalV3ToV3Borrow(v4Pool, v3Pool, {
+      ...options,
+      feeV3BorrowMillionths: 0,
+      feeV3TargetMillionths: v3Pool.feeMillionths || 3000
+    });
+  }
+
+  /**
+   * V4-to-V2 Flash Arbitrage (0% protocol flash fee on V4)
+   */
+  static findOptimalV4ToV2Borrow(v4Pool, v2Pool, options = {}) {
+    return V3QuoterEngine.findOptimalV3ToV2Borrow(v4Pool, v2Pool, {
+      ...options,
+      feeV3Millionths: 0
+    });
+  }
 }
 
 /**
